@@ -265,9 +265,11 @@ class GameState {
 // ── AI Logic ────────────────────────────────────────────────
 
 /**
- * AI card selection:
- *   - 25% chance to play X2 Copy if one is in hand
- *   - Otherwise: 25% greedy (lowest card), 75% play closest to per-player average
+ * AI card selection — four equal 25% buckets:
+ *   1. Greedy   — play the lowest card
+ *   2. Average  — play the card closest to the per-player effort share
+ *   3. Random   — play any card at random
+ *   4. X2 Copy  — play an X2 Copy if one is in hand; otherwise random
  */
 function aiChooseEffortCard(state, playerIndex) {
   const hand = state.hands[playerIndex];
@@ -276,27 +278,34 @@ function aiChooseEffortCard(state, playerIndex) {
 
   const activePlayers = [0,1,2,3].filter(i => !state.expelled[i]).length || NUM_PLAYERS;
   const avgNeeded = Math.ceil(state.effortRequired / activePlayers);
-
-  // 25% chance to play X2 Copy if available
-  const copyCards = hand.filter(c => c.isCopy);
-  if (copyCards.length > 0 && Math.random() < 0.25) {
-    return copyCards[0];
-  }
-
   const nonCopies = hand.filter(c => !c.isCopy);
-  if (nonCopies.length === 0) return hand[0];
+  const copies    = hand.filter(c =>  c.isCopy);
 
-  // 25% greedy — play lowest
-  if (Math.random() < 0.25) {
-    return nonCopies.reduce((min, c) => c.value < min.value ? c : min);
+  const roll = Math.random();
+
+  if (roll < 0.25) {
+    // Greedy — lowest non-copy; fall back to any card
+    if (nonCopies.length > 0)
+      return nonCopies.reduce((min, c) => c.value < min.value ? c : min);
+    return hand[Math.floor(Math.random() * hand.length)];
   }
 
-  // 75% — play card closest to the per-player average effort share
-  return nonCopies.reduce((best, c) => {
-    const bd = Math.abs(best.value - avgNeeded);
-    const cd = Math.abs(c.value - avgNeeded);
-    return cd < bd ? c : best;
-  });
+  if (roll < 0.50) {
+    // Average — closest to per-player share
+    if (nonCopies.length > 0)
+      return nonCopies.reduce((best, c) =>
+        Math.abs(c.value - avgNeeded) < Math.abs(best.value - avgNeeded) ? c : best);
+    return hand[Math.floor(Math.random() * hand.length)];
+  }
+
+  if (roll < 0.75) {
+    // Random — any card
+    return hand[Math.floor(Math.random() * hand.length)];
+  }
+
+  // X2 Copy — play a copy if available; otherwise random
+  if (copies.length > 0) return copies[0];
+  return hand[Math.floor(Math.random() * hand.length)];
 }
 
 function aiChoosePartyCard(hand, effortCard) {
