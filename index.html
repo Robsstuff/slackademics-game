@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>Slackademics</title>
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -12,9 +15,10 @@
      TITLE SCREEN
 ═══════════════════════════════════════════════════════════ -->
 <div id="screen-title" class="screen active">
-  <img class="box-art" src="../Slack final version/Other Cards/Box Art.jpg" alt="Slackademics" onerror="this.style.display='none'" />
+  <img class="box-art" src="assets/other/Box Art.jpg" alt="Slackademics"
+       onerror="this.style.display='none'" />
   <h1>Slackademics</h1>
-  <p class="tagline">1 vs 3 AI &mdash; Can you pass university through minimal effort and maximum partying?</p>
+  <p class="tagline">1 vs 3 AI &mdash; Pass university through minimal effort and maximum partying.</p>
   <button class="btn btn-primary" onclick="UI.startGame()">Start Game</button>
 </div>
 
@@ -29,17 +33,25 @@
     <span id="semester-badge">Semester 1 of 8</span>
     <div id="effort-track-wrap">
       <label>Effort:</label>
-      <div id="effort-track-bar"><div id="effort-track-fill" style="width:100%"></div></div>
+      <div id="effort-track-bar"><div id="effort-track-fill" style="width:0%"></div></div>
       <span id="effort-numbers">0 / 0</span>
     </div>
   </div>
 
-  <!-- Body grid -->
-  <div id="game-body">
+  <!-- Tab bar (mobile only — hidden on desktop via CSS) -->
+  <div id="tab-bar">
+    <button class="tab-btn active" onclick="UI.switchTab('project')" id="tab-project">Project</button>
+    <button class="tab-btn"        onclick="UI.switchTab('hand')"    id="tab-hand">Your Hand</button>
+    <button class="tab-btn"        onclick="UI.switchTab('pile')"    id="tab-pile">Effort Pile</button>
+    <button class="tab-btn"        onclick="UI.switchTab('skills')"  id="tab-skills">Skills</button>
+  </div>
 
-    <!-- Left panel -->
-    <div id="left-panel">
-      <div id="project-card-wrap">
+  <!-- Pane container -->
+  <div id="pane-container">
+
+    <!-- PROJECT PANE: project card + AI players -->
+    <div id="pane-project" class="pane active">
+      <div class="project-card-row">
         <img id="project-card-img" src="" alt="Project Card" />
         <div class="project-info">
           <h3 id="project-code">—</h3>
@@ -47,55 +59,52 @@
           <span id="condition-badge" class="condition-badge" style="display:none"></span>
         </div>
       </div>
+      <div id="ai-section"></div>
+    </div>
 
-      <div id="skills-section">
-        <h4>Leadership Skills</h4>
-        <div id="skills-list"></div>
+    <!-- HAND PANE: human player hand + party pile -->
+    <div id="pane-hand" class="pane">
+      <div id="human-section">
+        <div class="player-header">
+          <span class="player-name" id="human-name">You</span>
+          <span class="pl-badge" id="human-pl-badge" style="display:none">Project Leader</span>
+          <div class="fail-dots" id="human-fail-dots"></div>
+        </div>
+        <div id="human-hand"></div>
+        <div class="party-pile-area">
+          <label>Party Pile:</label>
+          <div class="party-pile-stack" id="human-party-pile"></div>
+          <span id="human-party-count" style="font-size:0.75rem;color:var(--muted)"></span>
+        </div>
       </div>
     </div>
 
-    <!-- Right panel -->
-    <div id="right-panel">
-      <div id="players-area">
-
-        <!-- Human player -->
-        <div id="human-section">
-          <div class="player-header">
-            <span class="player-name" id="human-name">You</span>
-            <span class="pl-badge" id="human-pl-badge" style="display:none">Project Leader</span>
-            <div class="fail-dots" id="human-fail-dots"></div>
-          </div>
-          <div id="human-hand"></div>
-          <div class="party-pile-area">
-            <label>Party Pile:</label>
-            <div class="party-pile-stack" id="human-party-pile"></div>
-            <span id="human-party-count" style="font-size:0.75rem;color:var(--muted)"></span>
-          </div>
-        </div>
-
-        <!-- AI players -->
-        <div id="ai-section"></div>
-
-      </div>
-
-      <!-- Effort pile -->
+    <!-- PILE PANE: effort pile cards -->
+    <div id="pane-pile" class="pane">
       <div id="effort-pile-area">
-        <label>Effort Pile:</label>
+        <label>Effort Pile (revealed cards):</label>
         <div id="effort-pile-cards"></div>
       </div>
-
-      <!-- Action bar -->
-      <div id="action-bar">
-        <div id="action-message">Waiting...</div>
-        <div id="action-buttons"></div>
-      </div>
     </div>
 
-    <!-- Log -->
-    <div id="log-section"><p id="log-latest"></p></div>
+    <!-- SKILLS PANE: leadership skills -->
+    <div id="pane-skills" class="pane">
+      <h4>Leadership Skills</h4>
+      <div id="skills-list"></div>
+    </div>
 
+  </div><!-- /pane-container -->
+
+  <!-- Action bar (always visible) -->
+  <div id="action-bar">
+    <div id="action-message">Waiting...</div>
+    <div id="action-buttons"></div>
   </div>
-</div>
+
+  <!-- Log strip -->
+  <div id="log-section"><p id="log-latest"></p></div>
+
+</div><!-- /screen-game -->
 
 <!-- ══════════════════════════════════════════════════════════
      GAME OVER SCREEN
@@ -110,29 +119,14 @@
      MODALS
 ═══════════════════════════════════════════════════════════ -->
 
-<!-- Card selection modal -->
-<div id="modal-card-select" class="overlay">
-  <div class="modal">
-    <h2 id="modal-card-title">Choose your Effort Card</h2>
-    <p id="modal-card-desc">Select one card to play toward the project.</p>
-    <div class="modal-cards" id="modal-card-list"></div>
-    <div class="modal-buttons">
-      <button class="btn btn-muted btn-small" onclick="UI.cancelCardModal()">Cancel</button>
-      <button class="btn btn-primary" id="modal-card-confirm" onclick="UI.confirmCard()" disabled>Confirm</button>
-    </div>
-  </div>
-</div>
-
-<!-- Blame vote modal -->
 <div id="modal-vote" class="overlay">
   <div class="modal">
     <h2>Blame Vote</h2>
-    <p id="modal-vote-desc">Who do you blame for this failure?</p>
+    <p id="modal-vote-desc"></p>
     <div id="modal-vote-options"></div>
   </div>
 </div>
 
-<!-- Snitch modal -->
 <div id="modal-snitch" class="overlay">
   <div class="modal">
     <h2>Snitch?</h2>
@@ -144,16 +138,14 @@
   </div>
 </div>
 
-<!-- Nominate modal -->
 <div id="modal-nominate" class="overlay">
   <div class="modal">
     <h2>Nominate for Extra Credit</h2>
-    <p>As Project Leader, pick one other player who contributed the most.</p>
+    <p>As Project Leader, pick the player who contributed the most.</p>
     <div id="modal-nominate-list"></div>
   </div>
 </div>
 
-<!-- Accuse modal -->
 <div id="modal-accuse" class="overlay">
   <div class="modal">
     <h2>Accuse a Player</h2>
@@ -162,16 +154,14 @@
   </div>
 </div>
 
-<!-- Semester break modal -->
 <div id="modal-break" class="overlay">
   <div class="modal">
     <h2>Semester Break</h2>
-    <p id="modal-break-desc">Draw a pair of cards that sum to 8. You cannot take the same pair twice (except 4 + X2 Copy).</p>
+    <p id="modal-break-desc">Draw a pair summing to 8. You cannot take the same pair twice (except 4 + X2 Copy).</p>
     <div id="modal-break-pairs"></div>
   </div>
 </div>
 
-<!-- Realign modal -->
 <div id="modal-realign" class="overlay">
   <div class="modal">
     <h2>Realign Priorities</h2>
@@ -180,7 +170,6 @@
   </div>
 </div>
 
-<!-- Personal Responsibility modal -->
 <div id="modal-personal-resp" class="overlay">
   <div class="modal">
     <h2>Personal Responsibility</h2>
@@ -189,11 +178,10 @@
   </div>
 </div>
 
-<!-- Accountability modal -->
 <div id="modal-accountability" class="overlay">
   <div class="modal">
     <h2>Accountability</h2>
-    <p id="modal-acc-desc">Revealed top Party cards. The highest card swaps with the lowest effort card.</p>
+    <p id="modal-acc-desc">Revealed top Party cards. Highest swaps with lowest effort card.</p>
     <div id="modal-acc-list"></div>
     <div class="modal-buttons" id="modal-acc-buttons"></div>
   </div>
@@ -204,48 +192,56 @@
   <span class="flash-text" id="flash-text"></span>
 </div>
 
-<!-- Scripts -->
+<!-- ══════════════════════════════════════════════════════════
+     SCRIPTS
+═══════════════════════════════════════════════════════════ -->
 <script src="data.js"></script>
 <script src="game.js"></script>
 <script>
+'use strict';
 // ============================================================
 // UI Controller
 // ============================================================
 const UI = (() => {
   let game = null;
+  let _activeTab = 'project';
 
   // ── Screens ───────────────────────────────────────────────
   function showScreen(id) {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     document.getElementById(id).classList.add('active');
   }
-
-  function showOverlay(id) {
-    document.getElementById(id).classList.add('active');
-  }
-  function hideOverlay(id) {
-    document.getElementById(id).classList.remove('active');
+  function showOverlay(id) { document.getElementById(id).classList.add('active'); }
+  function hideOverlay(id) { document.getElementById(id).classList.remove('active'); }
+  function hideAllOverlays() {
+    document.querySelectorAll('.overlay').forEach(o => o.classList.remove('active'));
   }
 
-  // ── Start / Restart ───────────────────────────────────────
-  function startGame() {
-    showScreen('screen-game');
-    game = new Game(renderState);
-    window.onLogMessage = (msg) => {
-      const el = document.getElementById('log-latest');
-      if (el) el.textContent = msg;
-    };
-    game.start();
+  // ── Tab navigation ────────────────────────────────────────
+  function switchTab(name) {
+    _activeTab = name;
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.pane').forEach(p => p.classList.remove('active'));
+    const tb = document.getElementById('tab-' + name);
+    const pn = document.getElementById('pane-' + name);
+    if (tb) tb.classList.add('active');
+    if (pn) pn.classList.add('active');
   }
 
-  function restartGame() {
-    hideOverlay('modal-card-select');
-    hideOverlay('modal-vote');
-    hideOverlay('modal-snitch');
-    hideOverlay('modal-nominate');
-    hideOverlay('modal-accuse');
-    hideOverlay('modal-break');
-    showScreen('screen-title');
+  // Auto-switch tab based on phase
+  function autoTab(phase) {
+    const mobile = window.innerWidth < 768;
+    if (!mobile) return;
+    switch (phase) {
+      case PHASES.CARD_SELECTION: switchTab('hand'); break;
+      case PHASES.REVEAL:
+      case PHASES.DAY_OF_DEADLINE: switchTab('pile'); break;
+      case PHASES.OUTCOME_PASS:
+      case PHASES.OUTCOME_FAIL:
+      case PHASES.BLAME_VOTE:
+      case PHASES.VOTE_RESULT: switchTab('project'); break;
+      default: break;
+    }
   }
 
   // ── Outcome Flash ─────────────────────────────────────────
@@ -253,7 +249,7 @@ const UI = (() => {
   function triggerFlash(result) {
     if (_lastFlash === result) return;
     _lastFlash = result;
-    const el = document.getElementById('outcome-flash');
+    const el  = document.getElementById('outcome-flash');
     const txt = document.getElementById('flash-text');
     el.className = '';
     txt.textContent = result === 'PASS' ? 'PASSED!' : 'FAILED!';
@@ -261,20 +257,32 @@ const UI = (() => {
     setTimeout(() => { el.className = ''; _lastFlash = null; }, 1800);
   }
 
+  // ── Start / Restart ───────────────────────────────────────
+  function startGame() {
+    showScreen('screen-game');
+    switchTab('project');
+    game = new Game(renderState);
+    window.onLogMessage = msg => {
+      const el = document.getElementById('log-latest');
+      if (el) el.textContent = msg;
+    };
+    game.start();
+  }
+
+  function restartGame() {
+    hideAllOverlays();
+    showScreen('screen-title');
+    game = null;
+  }
+
   // ── Main Render ───────────────────────────────────────────
   function renderState(state) {
     if (!state) return;
+    if (state.phase === PHASES.GAME_OVER) { renderGameOver(state); return; }
 
-    if (state.phase === PHASES.GAME_OVER) {
-      renderGameOver(state);
-      return;
-    }
+    if (state.outcomeFlash) { triggerFlash(state.outcomeFlash); state.outcomeFlash = null; }
 
-    if (state.outcomeFlash) {
-      triggerFlash(state.outcomeFlash);
-      state.outcomeFlash = null;
-    }
-
+    autoTab(state.phase);
     renderHeader(state);
     renderProject(state);
     renderSkills(state);
@@ -287,13 +295,13 @@ const UI = (() => {
 
   // ── Header ────────────────────────────────────────────────
   function renderHeader(state) {
-    document.getElementById('semester-badge').textContent =
-      `Semester ${state.semester} of 8`;
+    document.getElementById('semester-badge').textContent = `Semester ${state.semester} of 8`;
     const req = state.effortRequired || 0;
-    const rem = Math.max(0, state.effortRemaining || req);
-    const pct = req > 0 ? Math.max(0, ((req - rem) / req) * 100) : 0;
+    const rem = Math.max(0, state.effortRemaining ?? req);
+    const done = req - rem;
+    const pct  = req > 0 ? Math.min(100, (done / req) * 100) : 0;
     document.getElementById('effort-track-fill').style.width = pct + '%';
-    document.getElementById('effort-numbers').textContent = `${req - rem} / ${req}`;
+    document.getElementById('effort-numbers').textContent = `${done} / ${req}`;
   }
 
   // ── Project ───────────────────────────────────────────────
@@ -301,12 +309,13 @@ const UI = (() => {
     const p = state.currentProject;
     if (!p) return;
     document.getElementById('project-card-img').src = p.img;
-    document.getElementById('project-code').textContent = p.code;
+    document.getElementById('project-code').textContent  = p.code;
     document.getElementById('project-title').textContent = p.title;
     const badge = document.getElementById('condition-badge');
     if (p.condition) {
       badge.textContent = p.condition.name;
       badge.style.display = 'inline-block';
+      badge.title = p.condition.desc;
     } else {
       badge.style.display = 'none';
     }
@@ -318,61 +327,87 @@ const UI = (() => {
     list.innerHTML = '';
     const isDOD = state.phase === PHASES.DAY_OF_DEADLINE && state.projectLeaderIndex === 0;
 
+    if (state.skillsAvailable.length === 0) {
+      list.innerHTML = '<p style="font-size:0.75rem;color:var(--muted)">No skills available yet.</p>';
+      return;
+    }
+
     state.skillsAvailable.forEach(skill => {
       const div = document.createElement('div');
       div.className = 'skill-card' + (isDOD ? '' : ' disabled');
       div.innerHTML = `
         <img src="${skill.img}" alt="${skill.name}" onerror="this.style.display='none'" />
-        <div class="skill-text">
-          <h5>${skill.name}</h5>
-          <p>${skill.desc}</p>
-        </div>`;
+        <div class="skill-text"><h5>${skill.name}</h5><p>${skill.desc}</p></div>`;
       if (isDOD) {
         div.onclick = () => { game.useSkill(skill); hideAllOverlays(); };
       }
       list.appendChild(div);
     });
-
-    if (state.skillsAvailable.length === 0) {
-      list.innerHTML = '<p style="font-size:0.75rem;color:var(--muted)">No skills available.</p>';
-    }
   }
 
   // ── Human Player ─────────────────────────────────────────
+  // Two-step card selection state
+  let _effortSel = null;
+  let _step = 'effort';
+
   function renderHuman(state) {
     const ispl = state.projectLeaderIndex === 0;
-    const section = document.getElementById('human-section');
-    section.className = 'player-header' in section ? section.className : '';
-    if (ispl) section.classList.add('is-pl'); else section.classList.remove('is-pl');
+    const sec  = document.getElementById('human-section');
+    ispl ? sec.classList.add('is-pl') : sec.classList.remove('is-pl');
     document.getElementById('human-pl-badge').style.display = ispl ? 'inline-block' : 'none';
-
-    // Fails
     renderFailDots('human-fail-dots', state.fails[0]);
 
-    // Hand
-    const handEl = document.getElementById('human-hand');
-    const selectingEffort = state.phase === PHASES.CARD_SELECTION && !state.expelled[0] && state.cardsPlayedThisSemester[0] === null;
-
+    const handEl   = document.getElementById('human-hand');
     handEl.innerHTML = '';
-    state.hands[0].forEach(card => {
-      const el = makeCardEl(card, 'card');
-      if (selectingEffort) {
-        el.onclick = () => openCardSelectModal(card, 'effort');
-      } else {
-        el.classList.add('disabled');
-      }
-      handEl.appendChild(el);
-    });
+
+    const selecting = state.phase === PHASES.CARD_SELECTION &&
+                      !state.expelled[0] &&
+                      state.cardsPlayedThisSemester[0] === null;
 
     if (state.expelled[0]) {
-      handEl.innerHTML = '<span style="color:var(--red);font-size:0.82rem">EXPELLED</span>';
-    }
-    if (state.cardsPlayedThisSemester[0] && state.phase === PHASES.CARD_SELECTION) {
-      handEl.innerHTML += '<span style="color:var(--green-light);font-size:0.82rem;margin-left:8px">Cards chosen — waiting for others...</span>';
+      handEl.innerHTML = '<span style="color:var(--red);font-size:0.85rem">EXPELLED</span>';
+    } else if (!selecting && state.cardsPlayedThisSemester[0] !== null &&
+               state.phase === PHASES.CARD_SELECTION) {
+      handEl.innerHTML = '<span style="color:var(--green-light);font-size:0.82rem">Cards chosen — waiting...</span>';
+    } else {
+      state.hands[0].forEach(card => {
+        const el = makeCardEl(card, 'card');
+        if (selecting) {
+          el.onclick = () => handleCardClick(card, state);
+          if (_effortSel && card.uid === _effortSel.uid) el.classList.add('selected');
+        } else {
+          el.classList.add('disabled');
+        }
+        handEl.appendChild(el);
+      });
     }
 
-    // Party pile
+    // Selection hint
+    if (selecting) {
+      const hint = document.createElement('div');
+      hint.style.cssText = 'font-size:0.75rem;color:var(--muted);margin-top:6px;width:100%';
+      hint.textContent = _effortSel
+        ? `Effort: ${_effortSel.isCopy ? 'X2 Copy' : _effortSel.value} selected. Now tap a Party Pile card.`
+        : 'Tap a card to play toward the project (Effort), then tap another for your Party Pile.';
+      handEl.appendChild(hint);
+    }
+
     renderPartyPile('human-party-pile', 'human-party-count', state.partyPiles[0]);
+  }
+
+  function handleCardClick(card, state) {
+    if (_step === 'effort') {
+      _effortSel = card;
+      _step = 'party';
+      renderHuman(state); // refresh highlights
+    } else {
+      // Party card selected — submit
+      const ec = _effortSel;
+      const pc = card;
+      _effortSel = null;
+      _step = 'effort';
+      game.humanPlayCards(ec, pc);
+    }
   }
 
   function renderPartyPile(stackId, countId, pile) {
@@ -382,12 +417,8 @@ const UI = (() => {
     stack.innerHTML = '';
     const show = pile.slice(-3);
     show.forEach((card, i) => {
-      const el = makeCardEl(card, 'card card-sm');
-      el.style.position = 'absolute';
-      el.style.left = (i * 6) + 'px';
-      el.style.top = (i * 2) + 'px';
-      el.style.zIndex = i;
-      el.classList.add('disabled');
+      const el = makeCardEl(card, 'card card-sm disabled');
+      el.style.cssText = `position:absolute;left:${i*5}px;top:${i*2}px;z-index:${i}`;
       stack.appendChild(el);
     });
     if (count) count.textContent = pile.length + ' cards';
@@ -397,39 +428,36 @@ const UI = (() => {
   function renderAI(state) {
     const section = document.getElementById('ai-section');
     section.innerHTML = '';
-
     for (let i = 1; i < 4; i++) {
       const div = document.createElement('div');
-      div.className = 'ai-player-row' + (state.projectLeaderIndex === i ? ' is-pl' : '') + (state.expelled[i] ? ' expelled' : '');
+      div.className = 'ai-player-row' +
+        (state.projectLeaderIndex === i ? ' is-pl' : '') +
+        (state.expelled[i] ? ' expelled' : '');
 
-      const failHtml = buildFailDotHtml(state.fails[i]);
       const partyCount = state.partyPiles[i].length;
-      const handCount = state.hands[i].length;
+      const handCount  = state.hands[i].length;
+      const topCard    = state.partyPiles[i][state.partyPiles[i].length - 1];
+
+      const showFace = [PHASES.VOTE_RESULT, PHASES.SNITCH].includes(state.phase) ||
+        (state.snitchChain && state.snitchChain.some(s => s.target === i || s.snitcher === i));
 
       div.innerHTML = `
         <div class="ai-info">
           <div class="player-header">
             <span class="player-name">${state.playerNames[i]}</span>
-            ${state.projectLeaderIndex === i ? '<span class="pl-badge">Project Leader</span>' : ''}
-            <div class="fail-dots" style="margin-left:auto">${failHtml}</div>
+            ${state.projectLeaderIndex === i ? '<span class="pl-badge">PL</span>' : ''}
+            <div class="fail-dots" style="margin-left:auto">${buildFailDots(state.fails[i])}</div>
           </div>
-          <div class="ai-card-count">Hand: ${handCount} cards &bull; Party: ${partyCount} cards</div>
-        </div>
-        <div class="ai-party-preview" id="ai-party-${i}"></div>`;
-      section.appendChild(div);
+          <div class="ai-card-count">Hand: ${handCount} &bull; Party: ${partyCount}</div>
+        </div>`;
 
-      // Show top 1 card of party pile (face-down unless revealed)
-      const preview = div.querySelector(`#ai-party-${i}`);
-      const topCard = state.partyPiles[i][state.partyPiles[i].length - 1];
       if (topCard) {
-        // Show face-up if we're in snitch / vote phase and it's been "revealed"
-        const showFace = state.phase === PHASES.VOTE_RESULT || state.phase === PHASES.SNITCH ||
-          (state.snitchChain && state.snitchChain.some(s => s.target === i || s.snitcher === i));
-        const el = makeCardEl(topCard, 'card card-sm');
-        if (!showFace) el.classList.add('face-down');
-        el.classList.add('disabled');
-        preview.appendChild(el);
+        const cardEl = makeCardEl(topCard, 'card card-sm disabled');
+        if (!showFace) cardEl.classList.add('face-down');
+        div.appendChild(cardEl);
       }
+
+      section.appendChild(div);
     }
   }
 
@@ -438,67 +466,80 @@ const UI = (() => {
     const container = document.getElementById('effort-pile-cards');
     container.innerHTML = '';
 
-    // Revealed cards
     state.effortPileRevealed.forEach(entry => {
-      const el = makeCardEl(entry.card, 'card card-sm just-revealed');
-      el.classList.add('disabled');
+      const el = makeCardEl(entry.card, 'card card-sm just-revealed disabled');
       container.appendChild(el);
     });
 
-    // Unrevealed cards
     const unrevealed = state.effortPile.length - state.effortPileRevealed.length;
     for (let i = 0; i < unrevealed; i++) {
       const el = document.createElement('div');
       el.className = 'card card-sm face-down disabled';
       container.appendChild(el);
     }
+
+    // Badge on last face-down card during Day of Deadline
+    if (state.phase === PHASES.DAY_OF_DEADLINE && unrevealed === 1) {
+      const faceDown = container.querySelectorAll('.face-down');
+      const last = faceDown[faceDown.length - 1];
+      if (last) {
+        last.style.borderColor = 'var(--gold)';
+        last.style.boxShadow = '0 0 0 3px rgba(241,196,15,0.4)';
+        const badge = document.createElement('span');
+        badge.style.cssText = 'position:absolute;bottom:2px;left:0;right:0;text-align:center;font-size:0.55rem;color:var(--gold-light);font-weight:800';
+        badge.textContent = 'FINAL CARD';
+        last.appendChild(badge);
+      }
+    }
   }
 
   // ── Action Bar ────────────────────────────────────────────
   function renderActionBar(state) {
-    const msgEl = document.getElementById('action-message');
+    const msgEl  = document.getElementById('action-message');
     const btnsEl = document.getElementById('action-buttons');
     btnsEl.innerHTML = '';
 
-    const pl = state.projectLeaderIndex;
-    const plName = state.playerNames[pl];
+    const pl       = state.projectLeaderIndex;
+    const plName   = state.playerNames[pl];
     const isHumanPL = pl === 0;
 
     switch (state.phase) {
-      case PHASES.SETUP:
-        msgEl.textContent = 'Setting up...';
-        break;
 
       case PHASES.SEMESTER_START:
       case PHASES.SPEECH:
         msgEl.textContent = `${plName} is giving the Motivational Speech.`;
         if (isHumanPL) {
-          addBtn(btnsEl, 'Continue', 'btn-primary', () => game.advanceToCardSelection());
+          addBtn(btnsEl, 'Give Speech & Continue', 'btn-primary', () => game.advanceToCardSelection());
         } else {
-          msgEl.textContent += ' Waiting for AI...';
+          msgEl.textContent += ' Waiting...';
         }
         break;
 
       case PHASES.CARD_SELECTION:
         if (!state.expelled[0] && state.cardsPlayedThisSemester[0] === null) {
-          msgEl.textContent = 'Select one Effort Card and one Party Card from your hand.';
-          msgEl.innerHTML += ' <span style="color:var(--muted);font-size:0.82rem">(Click a card in your hand to select it)</span>';
+          msgEl.textContent = 'Go to Your Hand tab. Tap effort card, then party pile card.';
+          if (window.innerWidth < 768) {
+            addBtn(btnsEl, 'Go to Hand', 'btn-muted btn-small', () => switchTab('hand'));
+          }
         } else {
-          msgEl.textContent = 'Cards chosen. Waiting for other players...';
+          msgEl.textContent = 'Cards chosen — waiting for other players...';
         }
         break;
 
       case PHASES.REVEAL:
-        msgEl.textContent = `Revealing cards automatically... (${state.effortPileRevealed.length} of ${state.effortPile.length - 1} revealed)`;
+        msgEl.textContent = `Auto-revealing cards... (${state.effortPileRevealed.length} / ${Math.max(0, state.effortPile.length - 1)} shown)`;
+        if (window.innerWidth < 768) {
+          addBtn(btnsEl, 'View Pile', 'btn-muted btn-small', () => switchTab('pile'));
+        }
         break;
 
       case PHASES.DAY_OF_DEADLINE:
-        msgEl.textContent = `Day of the Deadline! One card remains face-down. Effort still needed: ${Math.max(0, state.effortRemaining)}.`;
+        msgEl.textContent = `Day of the Deadline! One card face-down. Still need: ${Math.max(0, state.effortRemaining)}.`;
         if (isHumanPL) {
-          addBtn(btnsEl, 'Let It Ride! (Reveal Final Card)', 'btn-success', () => game.letItRide());
+          addBtn(btnsEl, 'Let It Ride!', 'btn-success', () => game.letItRide());
           if (state.skillsAvailable.length > 0) {
-            addBtn(btnsEl, 'Use a Leadership Skill', 'btn-primary',
-              () => { msgEl.textContent = 'Click a skill card on the left panel.'; });
+            addBtn(btnsEl, 'Use Skill', 'btn-primary',
+              () => { switchTab('skills'); msgEl.textContent = 'Tap a skill card.'; });
           }
         } else {
           msgEl.textContent += ` ${plName} is deciding...`;
@@ -508,73 +549,76 @@ const UI = (() => {
       case PHASES.OUTCOME_PASS:
       case PHASES.NOMINATE:
         if (state.nominationPending && isHumanPL) {
-          msgEl.textContent = 'Project passed! Nominate one player for Extra Credit.';
+          msgEl.textContent = 'Project PASSED! Nominate one player for Extra Credit.';
           openNominateModal(state);
-        } else if (!state.nominationPending) {
-          msgEl.textContent = 'Project passed!';
+        } else {
+          msgEl.textContent = 'Project PASSED!';
         }
         break;
 
       case PHASES.OUTCOME_FAIL:
-        msgEl.textContent = 'Project failed! Proceeding to blame vote...';
+        msgEl.textContent = 'Project FAILED. Starting blame vote...';
         break;
 
       case PHASES.BLAME_VOTE:
         if (isHumanPL && state.accusedIndex === -1) {
-          msgEl.textContent = 'You are the Project Leader. Choose someone to accuse!';
+          msgEl.textContent = 'You are Project Leader. Choose someone to accuse!';
           openAccuseModal(state);
         } else if (!isHumanPL && state.accusedIndex === -1) {
           msgEl.textContent = `${plName} is choosing who to accuse...`;
         } else {
-          const accusedName = state.playerNames[state.accusedIndex];
-          if (!state.expelled[0] && 0 !== pl && 0 !== state.accusedIndex) {
-            msgEl.textContent = `${plName} accuses ${accusedName}! Cast your vote.`;
+          const acc = state.playerNames[state.accusedIndex];
+          const humanIsVoter = !state.expelled[0] && 0 !== pl && 0 !== state.accusedIndex;
+          if (humanIsVoter && state.votes[0] === -1) {
+            msgEl.textContent = `${plName} accuses ${acc}. Cast your vote!`;
             openVoteModal(state);
           } else {
-            msgEl.textContent = `${plName} accuses ${accusedName}. Waiting for votes...`;
+            msgEl.textContent = `${plName} accuses ${acc}. Waiting for votes...`;
           }
         }
         break;
 
       case PHASES.VOTE_RESULT:
-        msgEl.textContent = 'Vote results are in...';
+        msgEl.textContent = 'Vote resolved. Processing...';
         break;
 
       case PHASES.SNITCH:
         if (state.currentSnitchPlayer === 0) {
           openSnitchModal(state);
+          msgEl.textContent = 'You may snitch! See the modal.';
         } else {
           msgEl.textContent = `${state.playerNames[state.currentSnitchPlayer]} is deciding whether to snitch...`;
         }
         break;
 
       case PHASES.END_OF_SEMESTER:
-        msgEl.textContent = 'End of semester.';
+        msgEl.textContent = 'End of semester. Next one coming up...';
         break;
 
       case PHASES.SEMESTER_BREAK:
       case PHASES.BREAK_DRAW:
         openBreakModal(state);
-        msgEl.textContent = 'Semester Break — draw your cards.';
+        msgEl.textContent = 'Semester Break! Draw your cards.';
         break;
 
       case 'SKILL_PERSONAL_RESP':
-        msgEl.textContent = 'Personal Responsibility: choose a card from your hand to replace the final effort card.';
+        msgEl.textContent = 'Personal Responsibility: choose a card from your hand.';
         openPersonalRespModal(state);
         break;
 
       case 'SKILL_REALIGN':
-        msgEl.textContent = 'Realign Priorities: choose a player to swap the final effort card with their top Party Pile card.';
+        msgEl.textContent = 'Realign Priorities: choose a player.';
         openRealignModal(state);
         break;
 
       case 'SKILL_EXTEND':
-      case 'SKILL_EXTEND_PLAY':
         msgEl.textContent = 'Extend the Deadline — processing...';
-        if (state.phase === 'SKILL_EXTEND_PLAY') {
-          msgEl.textContent = 'Extend the Deadline: play a card from your hand face-up.';
-          renderExtendPlayUI(state, btnsEl);
-        }
+        game.processExtendDeadline();
+        break;
+
+      case 'SKILL_EXTEND_PLAY':
+        msgEl.textContent = 'Extend the Deadline: tap a card to play face-up.';
+        renderExtendPlayBtns(state, btnsEl);
         break;
 
       case 'SKILL_ACCOUNTABILITY':
@@ -582,108 +626,52 @@ const UI = (() => {
         break;
 
       default:
-        msgEl.textContent = state.phase;
+        msgEl.textContent = '';
     }
   }
 
-  // ── Modal helpers ─────────────────────────────────────────
-
-  let _effortCardSelection = null;
-  let _partyCardSelection = null;
-  let _selectionStep = 'effort'; // 'effort' or 'party'
-
-  function openCardSelectModal(clickedCard, step) {
-    // Handled inline — clicking hand cards opens a two-step selection
-    if (_selectionStep === 'effort' && step === 'effort') {
-      _effortCardSelection = clickedCard;
-      _selectionStep = 'party';
-      // Highlight selected effort card
-      document.querySelectorAll('#human-hand .card').forEach(el => {
-        el.classList.remove('selected');
-        if (el.dataset.uid === clickedCard.uid) el.classList.add('selected');
-      });
-      document.getElementById('action-message').textContent =
-        `Effort card: ${clickedCard.isCopy ? 'X2 Copy' : clickedCard.value} selected. Now click a card for your Party Pile.`;
-      // Re-render hand with party selection mode
-      renderHumanHandPartyMode(clickedCard);
-    } else if (_selectionStep === 'party') {
-      _partyCardSelection = clickedCard;
-      document.querySelectorAll('#human-hand .card').forEach(el => {
-        el.classList.remove('selected-party');
-        if (el.dataset.uid === clickedCard.uid) el.classList.add('selected-party');
-      });
-      // Confirm
-      game.humanPlayCards(_effortCardSelection, _partyCardSelection);
-      _effortCardSelection = null;
-      _partyCardSelection = null;
-      _selectionStep = 'effort';
-    }
-  }
-
-  function renderHumanHandPartyMode(effortCard) {
-    const state = game.state;
-    const handEl = document.getElementById('human-hand');
-    handEl.innerHTML = '';
-    state.hands[0].forEach(card => {
-      const el = makeCardEl(card, 'card');
-      el.dataset.uid = card.uid;
-      if (card.uid === effortCard.uid) {
-        el.classList.add('selected');
-        el.classList.add('disabled');
-      } else {
-        el.onclick = () => openCardSelectModal(card, 'party');
-      }
-      handEl.appendChild(el);
-    });
-  }
+  // ── Modal Helpers ─────────────────────────────────────────
 
   function openVoteModal(state) {
     if (document.getElementById('modal-vote').classList.contains('active')) return;
-    const accused = state.accusedIndex;
-    const pl = state.projectLeaderIndex;
-    const desc = document.getElementById('modal-vote-desc');
-    desc.textContent = `${state.playerNames[pl]} accuses ${state.playerNames[accused]}. Who takes the blame?`;
+    const pl  = state.projectLeaderIndex;
+    const acc = state.accusedIndex;
+    document.getElementById('modal-vote-desc').textContent =
+      `${state.playerNames[pl]} accuses ${state.playerNames[acc]}. Who takes the blame?`;
 
     const opts = document.getElementById('modal-vote-options');
     opts.innerHTML = '';
-
-    const makeOpt = (vote, label, imgSrc) => {
+    const mkOpt = (vote, label, img) => {
       const div = document.createElement('div');
       div.className = 'vote-option';
-      div.innerHTML = `<img src="${imgSrc}" onerror="this.style.display='none'" /><span>${label}</span>`;
+      div.innerHTML = `<img src="${img}" onerror="this.style.display='none'" /><span>${label}</span>`;
       div.onclick = () => { game.humanVote(vote); hideOverlay('modal-vote'); };
       opts.appendChild(div);
     };
-
-    makeOpt(0, `Blame ${state.playerNames[accused]} (Accused)`,
-      '../Slack final version/Other Cards/Blame the accused.jpg');
-    makeOpt(1, `Blame ${state.playerNames[pl]} (Project Leader)`,
-      '../Slack final version/Other Cards/Blame the leader.jpg');
-
+    mkOpt(0, `Blame ${state.playerNames[acc]} (Accused)`,  'assets/other/Blame the accused.jpg');
+    mkOpt(1, `Blame ${state.playerNames[pl]} (Project Leader)`, 'assets/other/Blame the leader.jpg');
     showOverlay('modal-vote');
   }
 
   function openSnitchModal(state) {
     if (document.getElementById('modal-snitch').classList.contains('active')) return;
-    const sp = state.currentSnitchPlayer;
-    const myTop = state.partyPiles[sp][state.partyPiles[sp].length - 1];
-    const myVal = myTop ? (myTop.isCopy ? 0 : myTop.value) : '?';
-
+    const sp   = state.currentSnitchPlayer;
+    const pile = state.partyPiles[sp];
+    const top  = pile.length ? pile[pile.length - 1] : null;
+    const myV  = top ? (top.isCopy ? 0 : top.value) : '?';
     document.getElementById('modal-snitch-desc').textContent =
-      `Your top Party Pile card is ${myVal}. Do you want to snitch on someone?`;
+      `Your top Party Pile card value is ${myV}. Snitch on someone?`;
 
     const targets = document.getElementById('modal-snitch-targets');
     targets.innerHTML = '';
-
     for (let i = 0; i < 4; i++) {
-      if (i === sp || state.expelled[i] || state.partyPiles[i].length === 0) continue;
+      if (i === sp || state.expelled[i] || !state.partyPiles[i].length) continue;
       const div = document.createElement('div');
       div.className = 'snitch-target';
       div.innerHTML = `<span>Snitch on ${state.playerNames[i]}</span>`;
       div.onclick = () => { game.humanSnitch(i); hideOverlay('modal-snitch'); };
       targets.appendChild(div);
     }
-
     showOverlay('modal-snitch');
   }
 
@@ -691,16 +679,14 @@ const UI = (() => {
     if (document.getElementById('modal-nominate').classList.contains('active')) return;
     const list = document.getElementById('modal-nominate-list');
     list.innerHTML = '';
-
     for (let i = 1; i < 4; i++) {
       if (state.expelled[i]) continue;
       const div = document.createElement('div');
       div.className = 'vote-option';
-      div.innerHTML = `<span>${state.playerNames[i]}</span>`;
+      div.innerHTML = `<span>Nominate ${state.playerNames[i]}</span>`;
       div.onclick = () => { game.nominateForExtraCredit(i); hideOverlay('modal-nominate'); };
       list.appendChild(div);
     }
-
     showOverlay('modal-nominate');
   }
 
@@ -708,39 +694,33 @@ const UI = (() => {
     if (document.getElementById('modal-accuse').classList.contains('active')) return;
     const list = document.getElementById('modal-accuse-list');
     list.innerHTML = '';
-
     for (let i = 1; i < 4; i++) {
       if (state.expelled[i]) continue;
       const div = document.createElement('div');
       div.className = 'vote-option';
       div.innerHTML = `
-        <img src="${'../Slack final version/Other Cards/Accuse.jpg'}" onerror="this.style.display='none'" style="width:48px;height:48px;object-fit:cover;border-radius:4px" />
-        <span>${state.playerNames[i]}</span>`;
+        <img src="assets/other/Accuse.jpg" onerror="this.style.display='none'"
+             style="width:44px;height:44px;object-fit:cover;border-radius:4px;flex-shrink:0" />
+        <span>Accuse ${state.playerNames[i]}</span>`;
       div.onclick = () => { game.humanAccuse(i); hideOverlay('modal-accuse'); };
       list.appendChild(div);
     }
-
     showOverlay('modal-accuse');
   }
 
   function openBreakModal(state) {
     if (document.getElementById('modal-break').classList.contains('active')) return;
-    const taken = state.takenBreakPairs[0];
+    const taken   = state.takenBreakPairs[0];
     const pairsEl = document.getElementById('modal-break-pairs');
     pairsEl.innerHTML = '';
-
     BREAK_PAIRS.forEach(pair => {
-      const alreadyTaken = !pair.canRepeat && taken.includes(pair.id);
+      const already = !pair.canRepeat && taken.includes(pair.id);
       const div = document.createElement('div');
-      div.className = 'vote-option' + (alreadyTaken ? ' disabled' : '');
-      div.style.marginBottom = '6px';
-      div.innerHTML = `<span>${pair.label}${alreadyTaken ? ' (already taken)' : ''}</span>`;
-      if (!alreadyTaken) {
-        div.onclick = () => { game.humanDrawBreakPair(pair.id); hideOverlay('modal-break'); };
-      }
+      div.className = 'vote-option' + (already ? ' disabled' : '');
+      div.innerHTML = `<span>${pair.label}${already ? ' (already taken)' : ''}</span>`;
+      if (!already) div.onclick = () => { game.humanDrawBreakPair(pair.id); hideOverlay('modal-break'); };
       pairsEl.appendChild(div);
     });
-
     showOverlay('modal-break');
   }
 
@@ -761,7 +741,7 @@ const UI = (() => {
     const list = document.getElementById('modal-realign-list');
     list.innerHTML = '';
     for (let i = 0; i < 4; i++) {
-      if (i === state.projectLeaderIndex || state.expelled[i] || state.partyPiles[i].length === 0) continue;
+      if (i === state.projectLeaderIndex || state.expelled[i] || !state.partyPiles[i].length) continue;
       const div = document.createElement('div');
       div.className = 'vote-option';
       div.innerHTML = `<span>${state.playerNames[i]}</span>`;
@@ -776,99 +756,71 @@ const UI = (() => {
     const list = document.getElementById('modal-acc-list');
     list.innerHTML = '';
 
-    let highestVal = -1;
-    let highestPlayers = [];
-
+    let highest = -1;
+    let winners = [];
     state.accountabilityRevealedCards.forEach(({ playerIndex, card }) => {
       const v = card.isCopy ? 0 : card.value;
-      if (v > highestVal) { highestVal = v; highestPlayers = [playerIndex]; }
-      else if (v === highestVal) highestPlayers.push(playerIndex);
-
+      if (v > highest) { highest = v; winners = [playerIndex]; }
+      else if (v === highest) winners.push(playerIndex);
       const div = document.createElement('div');
-      div.className = 'vote-option';
-      div.innerHTML = `
-        ${makeCardEl(card, 'card card-sm').outerHTML}
-        <span>${state.playerNames[playerIndex]}: ${card.isCopy ? 'X2 Copy (0)' : card.value}</span>`;
+      div.className = 'vote-option disabled';
+      div.innerHTML = `${makeCardEl(card,'card card-sm').outerHTML}<span>${state.playerNames[playerIndex]}: ${card.isCopy?'X2 Copy (0)':card.value}</span>`;
       list.appendChild(div);
     });
 
     const btns = document.getElementById('modal-acc-buttons');
     btns.innerHTML = '';
-
-    if (highestPlayers.length === 1) {
-      const winner = highestPlayers[0];
-      const btn = document.createElement('button');
-      btn.className = 'btn btn-primary';
-      btn.textContent = `${state.playerNames[winner]} swaps their card`;
-      btn.onclick = () => { game.resolveAccountability(winner); hideOverlay('modal-accountability'); };
-      btns.appendChild(btn);
-    } else {
-      // Tie — PL decides
-      if (state.projectLeaderIndex === 0) {
-        highestPlayers.forEach(i => {
-          const btn = document.createElement('button');
-          btn.className = 'btn btn-primary btn-small';
-          btn.textContent = `Choose ${state.playerNames[i]}`;
-          btn.onclick = () => { game.resolveAccountability(i); hideOverlay('modal-accountability'); };
-          btns.appendChild(btn);
-        });
-      }
+    if (state.projectLeaderIndex === 0 || winners.length === 1) {
+      winners.forEach(i => {
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-primary btn-small';
+        btn.textContent = `${state.playerNames[i]} swaps`;
+        btn.onclick = () => { game.resolveAccountability(i); hideOverlay('modal-accountability'); };
+        btns.appendChild(btn);
+      });
     }
-
     showOverlay('modal-accountability');
   }
 
-  function renderExtendPlayUI(state, btnsEl) {
+  function renderExtendPlayBtns(state, btnsEl) {
     state.hands[0].forEach(card => {
       const el = makeCardEl(card, 'card card-sm');
-      el.onclick = () => { game.humanExtendPlay(card); };
+      el.onclick = () => game.humanExtendPlay(card);
       btnsEl.appendChild(el);
     });
   }
 
   function handlePhaseOverlays(state) {
-    // Close overlays that are no longer relevant
-    const voteActive = state.phase === PHASES.BLAME_VOTE &&
-      !state.expelled[0] && 0 !== state.projectLeaderIndex && 0 !== state.accusedIndex &&
-      state.accusedIndex !== -1 && state.votes[0] === -1;
-    if (!voteActive) hideOverlay('modal-vote');
-
-    if (state.phase !== PHASES.SNITCH || state.currentSnitchPlayer !== 0) {
-      hideOverlay('modal-snitch');
-    }
-    if (state.phase !== PHASES.NOMINATE || state.projectLeaderIndex !== 0) {
-      hideOverlay('modal-nominate');
-    }
+    const voteOpen = state.phase === PHASES.BLAME_VOTE &&
+      !state.expelled[0] && 0 !== state.projectLeaderIndex &&
+      0 !== state.accusedIndex && state.accusedIndex !== -1 && state.votes[0] === -1;
+    if (!voteOpen) hideOverlay('modal-vote');
+    if (state.phase !== PHASES.SNITCH || state.currentSnitchPlayer !== 0) hideOverlay('modal-snitch');
+    if (state.phase !== PHASES.NOMINATE || state.projectLeaderIndex !== 0) hideOverlay('modal-nominate');
     if (!(state.phase === PHASES.BLAME_VOTE && state.projectLeaderIndex === 0 && state.accusedIndex === -1)) {
       hideOverlay('modal-accuse');
     }
-    if (state.phase !== PHASES.SEMESTER_BREAK && state.phase !== PHASES.BREAK_DRAW) {
-      hideOverlay('modal-break');
-    }
+    if (state.phase !== PHASES.SEMESTER_BREAK && state.phase !== PHASES.BREAK_DRAW) hideOverlay('modal-break');
     if (state.phase !== 'SKILL_PERSONAL_RESP') hideOverlay('modal-personal-resp');
-    if (state.phase !== 'SKILL_REALIGN') hideOverlay('modal-realign');
+    if (state.phase !== 'SKILL_REALIGN')       hideOverlay('modal-realign');
     if (state.phase !== 'SKILL_ACCOUNTABILITY') hideOverlay('modal-accountability');
-  }
-
-  function hideAllOverlays() {
-    document.querySelectorAll('.overlay').forEach(o => o.classList.remove('active'));
   }
 
   // ── Game Over ─────────────────────────────────────────────
   function renderGameOver(state) {
     showScreen('screen-gameover');
-    const sb = document.getElementById('scoreboard');
+    const sb    = document.getElementById('scoreboard');
+    const ranks = ['gold','silver','bronze',''];
     sb.innerHTML = '';
-    const ranks = ['gold', 'silver', 'bronze', ''];
     state.finalScores.forEach((s, idx) => {
       const div = document.createElement('div');
       div.className = 'score-row';
       div.innerHTML = `
-        <span class="score-rank ${ranks[idx] || ''}">${idx + 1}.</span>
+        <span class="score-rank ${ranks[idx]||''}">${idx+1}.</span>
         <span class="score-name">${s.name}</span>
         <div>
           <div class="score-total">${s.score} pts</div>
-          <div class="score-break">Pile: ${s.pilePoints} + EC: ${s.ecPoints}${s.responsibleBonus ? ' + Bonus: ' + s.responsibleBonus : ''}</div>
+          <div class="score-break">Pile: ${s.pilePoints} + EC: ${s.ecPoints}${s.responsibleBonus?' +Bonus:'+s.responsibleBonus:''}</div>
         </div>`;
       sb.appendChild(div);
     });
@@ -876,55 +828,54 @@ const UI = (() => {
 
   // ── Card element factory ──────────────────────────────────
   function makeCardEl(card, classes) {
-    const div = document.createElement('div');
-    div.className = classes;
+    const div  = document.createElement('div');
+    div.className = classes || 'card';
     div.dataset.uid = card.uid || '';
 
     const type = EFFORT_CARD_TYPES.find(t => t.id === card.typeId) ||
                  (card.isCopy ? EFFORT_CARD_TYPES.find(t => t.id === 'copy') : null);
     const imgSrc = type ? type.img : '';
 
-    div.innerHTML = `<img src="${imgSrc}" alt="${card.isCopy ? 'X2 Copy' : card.value}" onerror="this.style.opacity='0.3'" />`;
+    const img = document.createElement('img');
+    img.src = imgSrc;
+    img.alt = card.isCopy ? 'X2 Copy' : String(card.value ?? '');
+    img.onerror = () => { img.style.opacity = '0.2'; };
+    div.appendChild(img);
 
-    if (!card.isCopy && card.value !== null) {
-      const badge = document.createElement('span');
-      badge.className = 'effort-value-badge';
-      badge.textContent = card.value;
-      div.appendChild(badge);
-    } else if (card.isCopy) {
-      const badge = document.createElement('span');
-      badge.className = 'effort-value-badge';
+    const badge = document.createElement('span');
+    badge.className = 'effort-value-badge';
+    if (card.isCopy) {
+      badge.textContent = 'x2';
       badge.style.background = 'var(--red)';
       badge.style.color = 'var(--white)';
-      badge.textContent = 'x2';
-      div.appendChild(badge);
+    } else {
+      badge.textContent = card.value ?? '0';
     }
+    div.appendChild(badge);
 
     const label = document.createElement('span');
     label.className = 'card-label';
-    label.textContent = card.isCopy ? 'X2 Copy' : (type ? type.label : card.value);
+    label.textContent = card.isCopy ? 'X2 Copy' : (type ? type.label : String(card.value));
     div.appendChild(label);
 
     return div;
   }
 
-  // ── Utility ───────────────────────────────────────────────
-  function renderFailDots(containerId, failCount) {
-    const el = document.getElementById(containerId);
+  // ── Utilities ─────────────────────────────────────────────
+  function renderFailDots(id, count) {
+    const el = document.getElementById(id);
     if (!el) return;
     el.innerHTML = '';
     for (let i = 0; i < 3; i++) {
       const dot = document.createElement('span');
-      dot.className = 'fail-dot' + (i < failCount ? ' filled' : '');
+      dot.className = 'fail-dot' + (i < count ? ' filled' : '');
       el.appendChild(dot);
     }
   }
 
-  function buildFailDotHtml(failCount) {
+  function buildFailDots(count) {
     let h = '';
-    for (let i = 0; i < 3; i++) {
-      h += `<span class="fail-dot${i < failCount ? ' filled' : ''}"></span>`;
-    }
+    for (let i = 0; i < 3; i++) h += `<span class="fail-dot${i<count?' filled':''}"></span>`;
     return h;
   }
 
@@ -938,24 +889,10 @@ const UI = (() => {
     return btn;
   }
 
-  // ── Init ─────────────────────────────────────────────────
-  function cancelCardModal() {
-    _effortCardSelection = null;
-    _partyCardSelection = null;
-    _selectionStep = 'effort';
-    hideOverlay('modal-card-select');
-    if (game) renderState(game.state);
-  }
+  // Public stubs for HTML onclick attributes
+  function passSnitch() { if (game) { game.humanPassSnitch(); hideOverlay('modal-snitch'); } }
 
-  function confirmCard() {}
-  function passSnitch() {
-    if (game) game.humanPassSnitch();
-    hideOverlay('modal-snitch');
-  }
-
-  return {
-    startGame, restartGame, cancelCardModal, confirmCard, passSnitch,
-  };
+  return { startGame, restartGame, switchTab, passSnitch };
 })();
 </script>
 </body>

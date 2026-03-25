@@ -6,8 +6,8 @@
 // ============================================================
 
 const IMG = {
-  exam: (n) => `../Slack final version/EXAM CARDS FINAL REAL/Slide${n}.JPG`,
-  skill: (n) => `../Slack final version/LEadership Skills/Slide${n}.JPG`,
+  exam: (n) => `assets/exam/Slide${n}.JPG`,
+  skill: (n) => `assets/skills/Slide${n}.JPG`,
   effort: (n) => {
     const map = {
       0: 'Effort 0.jpg', 1: 'Effort 1.jpg', 2: 'Effort 2.jpg',
@@ -15,9 +15,9 @@ const IMG = {
       6: 'Effort 6.jpg', 7: 'Effort 7.jpg', 8: 'Effort 8.jpg',
       'copy': 'Copy.jpg'
     };
-    return `../Slack final version/Other Cards/${map[n]}`;
+    return `assets/other/${map[n]}`;
   },
-  other: (name) => `../Slack final version/Other Cards/${name}`,
+  other: (name) => `assets/other/${name}`,
 };
 
 // ============================================================
