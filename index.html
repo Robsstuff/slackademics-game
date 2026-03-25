@@ -127,14 +127,26 @@
   </div>
 </div>
 
+<!-- Snitch decision modal -->
 <div id="modal-snitch" class="overlay">
   <div class="modal">
     <h2>Snitch?</h2>
     <p id="modal-snitch-desc"></p>
+    <div id="modal-snitch-all-piles" style="margin-bottom:12px"></div>
     <div id="modal-snitch-targets"></div>
     <div class="modal-buttons">
       <button class="btn btn-muted" onclick="UI.passSnitch()">Don't Snitch</button>
     </div>
+  </div>
+</div>
+
+<!-- Snitch reveal animation modal -->
+<div id="modal-snitch-reveal" class="overlay">
+  <div class="modal" style="text-align:center">
+    <h2 id="snitch-reveal-title">Snitch!</h2>
+    <p id="snitch-reveal-subtitle" style="margin-bottom:12px;color:var(--muted)"></p>
+    <div id="snitch-reveal-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px"></div>
+    <div id="snitch-reveal-result" class="snitch-result-banner" style="display:none"></div>
   </div>
 </div>
 
@@ -235,11 +247,13 @@ const UI = (() => {
     switch (phase) {
       case PHASES.CARD_SELECTION: switchTab('hand'); break;
       case PHASES.REVEAL:
-      case PHASES.DAY_OF_DEADLINE: switchTab('pile'); break;
+      case PHASES.DAY_OF_DEADLINE:
+      case PHASES.FINAL_REVEALED: switchTab('pile'); break;
       case PHASES.OUTCOME_PASS:
       case PHASES.OUTCOME_FAIL:
       case PHASES.BLAME_VOTE:
-      case PHASES.VOTE_RESULT: switchTab('project'); break;
+      case PHASES.VOTE_RESULT:
+      case PHASES.SNITCH_REVEAL: switchTab('project'); break;
       default: break;
     }
   }
@@ -546,6 +560,16 @@ const UI = (() => {
         }
         break;
 
+      case PHASES.FINAL_REVEALED: {
+        const tot = state.finalTotal ?? 0;
+        const req = state.effortRequired;
+        msgEl.innerHTML = `Final card revealed! Total: <strong>${tot}</strong> / ${req} — ${tot >= req ? 'Calculating PASS...' : 'Calculating FAIL...'}`;
+        if (window.innerWidth < 768) {
+          addBtn(btnsEl, 'View Pile', 'btn-muted btn-small', () => switchTab('pile'));
+        }
+        break;
+      }
+
       case PHASES.OUTCOME_PASS:
       case PHASES.NOMINATE:
         if (state.nominationPending && isHumanPL) {
@@ -558,6 +582,13 @@ const UI = (() => {
 
       case PHASES.OUTCOME_FAIL:
         msgEl.textContent = 'Project FAILED. Starting blame vote...';
+        break;
+
+      case PHASES.SNITCH_REVEAL:
+        msgEl.textContent = 'Snitch in progress...';
+        if (state.snitchReveal && !document.getElementById('modal-snitch-reveal').classList.contains('active')) {
+          showSnitchReveal(state);
+        }
         break;
 
       case PHASES.BLAME_VOTE:
@@ -658,21 +689,187 @@ const UI = (() => {
     const sp   = state.currentSnitchPlayer;
     const pile = state.partyPiles[sp];
     const top  = pile.length ? pile[pile.length - 1] : null;
-    const myV  = top ? (top.isCopy ? 0 : top.value) : '?';
+    const myV  = top ? (top.isCopy ? 'X2 Copy (0)' : top.value) : '?';
     document.getElementById('modal-snitch-desc').textContent =
-      `Your top Party Pile card value is ${myV}. Snitch on someone?`;
+      `Your top Party Pile card: ${myV}. Snitch on someone?`;
+
+    // Show all players' party piles
+    const allPiles = document.getElementById('modal-snitch-all-piles');
+    allPiles.innerHTML = '';
+    const grid = document.createElement('div');
+    grid.style.cssText = 'display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:8px';
+    for (let i = 0; i < 4; i++) {
+      if (state.expelled[i]) continue;
+      const slot = document.createElement('div');
+      slot.className = 'snitch-player-slot' + (i === sp ? ' snitcher' : '');
+      const playerPile = state.partyPiles[i];
+      const topCard = playerPile.length ? playerPile[playerPile.length - 1] : null;
+      // Show top 3 pile cards as stacked mini thumbnails, with top card face-up for snitcher only
+      let pileHtml = `<div class="snitch-player-name">${state.playerNames[i]}${state.projectLeaderIndex===i?' (PL)':''}</div>`;
+      pileHtml += `<div class="snitch-pile-preview">`;
+      if (playerPile.length === 0) {
+        pileHtml += `<span style="font-size:0.7rem;color:var(--muted)">Empty</span>`;
+      } else {
+        // Show count + top card value (only own pile is visible)
+        const showVal = i === sp;
+        const cardVal = topCard ? (topCard.isCopy ? 'X2' : topCard.value) : '?';
+        pileHtml += `<div class="card card-sm ${showVal?'':'face-down'} disabled" style="position:relative">`;
+        if (showVal) {
+          const t = EFFORT_CARD_TYPES.find(t => t.id === (topCard.isCopy ? 'copy' : ('e' + topCard.value))) || {};
+          pileHtml += `<img src="${t.img||''}" style="width:100%;height:100%;object-fit:cover" onerror="this.style.opacity=0.1" />`;
+          pileHtml += `<span class="effort-value-badge" style="${topCard.isCopy?'background:var(--red);color:white':''}">` +
+            `${topCard.isCopy ? 'x2' : cardVal}</span>`;
+        }
+        pileHtml += `</div>`;
+        pileHtml += `<span style="font-size:0.68rem;color:var(--muted)">${playerPile.length} card${playerPile.length>1?'s':''}</span>`;
+      }
+      pileHtml += `</div>`;
+      slot.innerHTML = pileHtml;
+      grid.appendChild(slot);
+    }
+    allPiles.appendChild(grid);
 
     const targets = document.getElementById('modal-snitch-targets');
-    targets.innerHTML = '';
+    targets.innerHTML = '<div style="font-size:0.72rem;color:var(--muted);margin-bottom:6px">Who do you snitch on?</div>';
     for (let i = 0; i < 4; i++) {
       if (i === sp || state.expelled[i] || !state.partyPiles[i].length) continue;
       const div = document.createElement('div');
       div.className = 'snitch-target';
-      div.innerHTML = `<span>Snitch on ${state.playerNames[i]}</span>`;
+      div.innerHTML = `<span>Snitch on <strong>${state.playerNames[i]}</strong></span>`;
       div.onclick = () => { game.humanSnitch(i); hideOverlay('modal-snitch'); };
       targets.appendChild(div);
     }
     showOverlay('modal-snitch');
+  }
+
+  // ── Snitch Reveal Animation ───────────────────────────────
+  let _snitchRevealTimer = null;
+
+  function showSnitchReveal(state) {
+    const reveal = state.snitchReveal;
+    if (!reveal) return;
+
+    document.getElementById('snitch-reveal-title').textContent =
+      `${state.playerNames[reveal.snitcherIndex]} Snitches!`;
+    document.getElementById('snitch-reveal-subtitle').textContent =
+      `on ${state.playerNames[reveal.targetIndex]}`;
+
+    const resultEl = document.getElementById('snitch-reveal-result');
+    resultEl.style.display = 'none';
+    resultEl.className = 'snitch-result-banner';
+
+    const grid = document.getElementById('snitch-reveal-grid');
+    grid.innerHTML = '';
+
+    // Build player slots — show all 4 players (skip expelled)
+    const slots = {};
+    for (let i = 0; i < 4; i++) {
+      if (state.expelled[i]) continue;
+      const isSnitcher = i === reveal.snitcherIndex;
+      const isTarget   = i === reveal.targetIndex;
+
+      const slot = document.createElement('div');
+      slot.className = 'snitch-player-slot' + (isSnitcher ? ' snitcher' : '') + (isTarget ? ' target' : '');
+      slot.style.gridColumn = (isSnitcher || isTarget) ? 'span 1' : 'span 1';
+
+      // Player name + role label
+      const nameDiv = document.createElement('div');
+      nameDiv.className = 'snitch-player-name';
+      nameDiv.innerHTML = `${state.playerNames[i]}
+        ${isSnitcher ? '<span style="color:var(--gold-light);font-size:0.65rem"> SNITCHING</span>' : ''}
+        ${isTarget   ? '<span style="color:var(--red-light);font-size:0.65rem"> ACCUSED</span>' : ''}`;
+      slot.appendChild(nameDiv);
+
+      // Party pile size
+      const pileSize = state.partyPiles[i].length;
+      const sizeLabel = document.createElement('div');
+      sizeLabel.style.cssText = 'font-size:0.65rem;color:var(--muted)';
+      sizeLabel.textContent = `${pileSize} card${pileSize !== 1 ? 's' : ''} in pile`;
+      slot.appendChild(sizeLabel);
+
+      // Flip card — face-down initially
+      const isKey = isSnitcher || isTarget;
+      const cardData = (isSnitcher || isTarget)
+        ? (isSnitcher ? reveal.snitcherCard : reveal.targetCard)
+        : state.partyPiles[i][state.partyPiles[i].length - 1];
+
+      const flipWrap = document.createElement('div');
+      flipWrap.className = 'snitch-card-flip';
+      flipWrap.id = `snitch-flip-${i}`;
+
+      const inner = document.createElement('div');
+      inner.className = 'snitch-card-inner';
+
+      const back = document.createElement('div');
+      back.className = 'snitch-card-back';
+
+      const face = document.createElement('div');
+      face.className = 'snitch-card-face';
+      if (cardData) {
+        const t = EFFORT_CARD_TYPES.find(t => t.id === (cardData.isCopy ? 'copy' : ('e' + cardData.value))) || {};
+        const img = document.createElement('img');
+        img.src = t.img || '';
+        img.onerror = () => { img.style.opacity = '0.15'; };
+        face.appendChild(img);
+        const badge = document.createElement('span');
+        badge.className = 'snitch-card-value';
+        badge.textContent = cardData.isCopy ? 'x2' : cardData.value;
+        if (cardData.isCopy) { badge.style.background = 'var(--red)'; badge.style.color = 'white'; }
+        face.appendChild(badge);
+      }
+
+      inner.appendChild(back);
+      inner.appendChild(face);
+      flipWrap.appendChild(inner);
+      slot.appendChild(flipWrap);
+
+      grid.appendChild(slot);
+      slots[i] = flipWrap;
+    }
+
+    showOverlay('modal-snitch-reveal');
+
+    // Animation sequence
+    if (_snitchRevealTimer) clearTimeout(_snitchRevealTimer);
+
+    // Step 1: flip snitcher card at 1.0s
+    _snitchRevealTimer = setTimeout(() => {
+      const sc = slots[reveal.snitcherIndex];
+      if (sc) sc.classList.add('flipped');
+
+      // Step 2: flip target card at 2.2s
+      _snitchRevealTimer = setTimeout(() => {
+        const tc = slots[reveal.targetIndex];
+        if (tc) tc.classList.add('flipped');
+
+        // Step 3: show result at 3.2s
+        _snitchRevealTimer = setTimeout(() => {
+          resultEl.style.display = 'block';
+          if (reveal.result === 'success') {
+            resultEl.classList.add('success');
+            resultEl.innerHTML =
+              `SUCCESS<br><span style="font-size:0.65em">` +
+              `${state.playerNames[reveal.snitcherIndex]}: ${reveal.snitcherVal} &lt; ` +
+              `${state.playerNames[reveal.targetIndex]}: ${reveal.targetVal}` +
+              `<br>${state.playerNames[reveal.targetIndex]} takes a Fail!</span>`;
+          } else {
+            resultEl.classList.add('fail');
+            resultEl.innerHTML =
+              `SNITCH FAILED<br><span style="font-size:0.65em">` +
+              `${state.playerNames[reveal.snitcherIndex]}: ${reveal.snitcherVal} &gt;= ` +
+              `${state.playerNames[reveal.targetIndex]}: ${reveal.targetVal}` +
+              `<br>${state.playerNames[reveal.snitcherIndex]} takes a Fail!</span>`;
+          }
+
+          // Step 4: close and continue at 5.0s
+          _snitchRevealTimer = setTimeout(() => {
+            hideOverlay('modal-snitch-reveal');
+            if (game) game.completeSnitchReveal();
+          }, 1800);
+
+        }, 1000);
+      }, 1200);
+    }, 1000);
   }
 
   function openNominateModal(state) {
@@ -796,6 +993,7 @@ const UI = (() => {
       0 !== state.accusedIndex && state.accusedIndex !== -1 && state.votes[0] === -1;
     if (!voteOpen) hideOverlay('modal-vote');
     if (state.phase !== PHASES.SNITCH || state.currentSnitchPlayer !== 0) hideOverlay('modal-snitch');
+    if (state.phase !== PHASES.SNITCH_REVEAL) hideOverlay('modal-snitch-reveal');
     if (state.phase !== PHASES.NOMINATE || state.projectLeaderIndex !== 0) hideOverlay('modal-nominate');
     if (!(state.phase === PHASES.BLAME_VOTE && state.projectLeaderIndex === 0 && state.accusedIndex === -1)) {
       hideOverlay('modal-accuse');

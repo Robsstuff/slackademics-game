@@ -735,6 +735,110 @@ html, body {
 .shake { animation: shake 0.3s ease; }
 
 /* ══════════════════════════════════════════════════════════
+   SNITCH REVEAL POPUP
+══════════════════════════════════════════════════════════ */
+.snitch-player-slot {
+  background: var(--navy-light);
+  border-radius: var(--radius);
+  padding: 10px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  border: 2px solid transparent;
+  transition: border-color 0.3s;
+}
+.snitch-player-slot.snitcher { border-color: var(--gold); }
+.snitch-player-slot.target   { border-color: var(--red);  }
+
+.snitch-player-name {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.snitch-pile-preview {
+  display: flex;
+  gap: 4px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.snitch-card-flip {
+  width: var(--card-w);
+  height: var(--card-h);
+  perspective: 600px;
+  flex-shrink: 0;
+}
+.snitch-card-inner {
+  width: 100%; height: 100%;
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform 0.5s ease;
+}
+.snitch-card-flip.flipped .snitch-card-inner {
+  transform: rotateY(180deg);
+}
+.snitch-card-face, .snitch-card-back {
+  position: absolute; inset: 0;
+  border-radius: 6px;
+  backface-visibility: hidden;
+  overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+}
+.snitch-card-back {
+  background: var(--navy-mid);
+  border: 2px solid var(--navy-light);
+  font-size: 2rem; color: var(--muted);
+}
+.snitch-card-back::after { content: '?'; }
+.snitch-card-face {
+  background: var(--navy-light);
+  transform: rotateY(180deg);
+  border: 2px solid var(--navy-light);
+}
+.snitch-card-face img { width: 100%; height: 100%; object-fit: cover; }
+
+.snitch-card-value {
+  position: absolute;
+  top: 4px; right: 4px;
+  background: var(--gold);
+  color: var(--navy);
+  border-radius: 50%;
+  width: 22px; height: 22px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+  transform: rotateY(180deg); /* cancel parent flip */
+}
+
+.snitch-result-banner {
+  padding: 14px 20px;
+  border-radius: 10px;
+  font-size: clamp(1.2rem, 5vw, 1.6rem);
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  text-align: center;
+}
+.snitch-result-banner.success { background: rgba(39,174,96,0.25); color: var(--green-light); border: 2px solid var(--green); }
+.snitch-result-banner.fail    { background: rgba(192,57,43,0.25);  color: var(--red-light);   border: 2px solid var(--red); }
+
+@keyframes pileCardIn {
+  from { transform: translateY(10px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+.pile-card-preview {
+  animation: pileCardIn 0.25s ease;
+}
+
+/* ══════════════════════════════════════════════════════════
    SCROLLBAR (desktop)
 ══════════════════════════════════════════════════════════ */
 ::-webkit-scrollbar       { width: 5px; height: 5px; }

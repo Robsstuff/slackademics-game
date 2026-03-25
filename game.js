@@ -13,12 +13,14 @@ const PHASES = {
   CARD_SELECTION:    'CARD_SELECTION',
   REVEAL:            'REVEAL',
   DAY_OF_DEADLINE:   'DAY_OF_DEADLINE',
+  FINAL_REVEALED:    'FINAL_REVEALED',   // brief pause after final card flip
   OUTCOME_PASS:      'OUTCOME_PASS',
   NOMINATE:          'NOMINATE',         // PL nominates extra credit recipient
   OUTCOME_FAIL:      'OUTCOME_FAIL',
   BLAME_VOTE:        'BLAME_VOTE',
   VOTE_RESULT:       'VOTE_RESULT',
   SNITCH:            'SNITCH',
+  SNITCH_REVEAL:     'SNITCH_REVEAL',    // animated reveal before outcome applied
   END_OF_SEMESTER:   'END_OF_SEMESTER',
   SEMESTER_BREAK:    'SEMESTER_BREAK',
   BREAK_DRAW:        'BREAK_DRAW',
@@ -263,53 +265,38 @@ class GameState {
 // ── AI Logic ────────────────────────────────────────────────
 
 /**
- * AI personality types assigned at game start.
- * 'slacker': prefers low effort cards in the project pile
- * 'tryhard': prefers high effort cards
- * 'balanced': roughly equal
+ * AI card selection:
+ *   - 25% chance to play X2 Copy if one is in hand
+ *   - Otherwise: 25% greedy (lowest card), 75% play closest to per-player average
  */
-const AI_PERSONALITIES = ['slacker', 'balanced', 'tryhard'];
-
 function aiChooseEffortCard(state, playerIndex) {
   const hand = state.hands[playerIndex];
   if (hand.length === 0) return null;
   if (hand.length === 1) return hand[0];
 
-  const personality = state.aiPersonalities[playerIndex];
-  const effortNeeded = state.effortRequired;
-  const avgNeeded = Math.ceil(effortNeeded / NUM_PLAYERS);
+  const activePlayers = [0,1,2,3].filter(i => !state.expelled[i]).length || NUM_PLAYERS;
+  const avgNeeded = Math.ceil(state.effortRequired / activePlayers);
 
-  // Ensure player keeps at least 1 card for party pile
-  const candidates = hand.length > 1 ? hand : hand.slice(0, 1);
-
-  // Sort by value (copies count as ~5 for scoring purposes)
-  const valued = candidates.map(c => ({ c, v: c.isCopy ? 5 : c.value }));
-
-  switch (personality) {
-    case 'slacker':
-      // Play the lowest card, keep high ones for party pile
-      valued.sort((a, b) => a.v - b.v);
-      break;
-    case 'tryhard':
-      // Play a card near the average needed, keep copies
-      valued.sort((a, b) => {
-        const da = Math.abs(a.v - avgNeeded);
-        const db = Math.abs(b.v - avgNeeded);
-        return da - db;
-      });
-      break;
-    case 'balanced':
-    default:
-      // Mix: slight bias toward lower effort
-      valued.sort((a, b) => a.v - b.v);
-      // Pick from lower half with 70% probability
-      if (Math.random() < 0.7) {
-        valued.splice(Math.ceil(valued.length / 2));
-      }
-      break;
+  // 25% chance to play X2 Copy if available
+  const copyCards = hand.filter(c => c.isCopy);
+  if (copyCards.length > 0 && Math.random() < 0.25) {
+    return copyCards[0];
   }
 
-  return valued[0].c;
+  const nonCopies = hand.filter(c => !c.isCopy);
+  if (nonCopies.length === 0) return hand[0];
+
+  // 25% greedy — play lowest
+  if (Math.random() < 0.25) {
+    return nonCopies.reduce((min, c) => c.value < min.value ? c : min);
+  }
+
+  // 75% — play card closest to the per-player average effort share
+  return nonCopies.reduce((best, c) => {
+    const bd = Math.abs(best.value - avgNeeded);
+    const cd = Math.abs(c.value - avgNeeded);
+    return cd < bd ? c : best;
+  });
 }
 
 function aiChoosePartyCard(hand, effortCard) {
@@ -464,9 +451,7 @@ class Game {
     this._drawSkills(s);
     this._drawSkills(s); // draw up to 2
 
-    // Assign AI personalities
-    const perms = shuffle([...AI_PERSONALITIES]);
-    s.aiPersonalities = [null, perms[0], perms[1], perms[2]];
+    // AI personalities removed — all AIs use the shared aiChooseEffortCard logic
 
     // Deal hands
     for (let i = 0; i < NUM_PLAYERS; i++) {
@@ -771,7 +756,7 @@ class Game {
     const s = this.state;
     if (s.phase !== PHASES.DAY_OF_DEADLINE) return;
 
-    // Reveal final card
+    // Reveal final card and show it for 2.5s before outcome flash
     const lastEntry = s.effortPile[s.effortPile.length - 1];
     s.effortPileRevealed.push(lastEntry);
     const v = lastEntry.card.isCopy ? 'X2 Copy' : lastEntry.card.value;
@@ -781,19 +766,26 @@ class Game {
     const total = calculateEffortTotal(allCards, s.currentProject.condition);
     s.emit(`Total effort: ${total}. Required: ${s.effortRequired}.`);
 
-    if (total >= s.effortRequired) {
-      s.emit('Project PASSED via Let It Ride!');
-      s.outcomeFlash = 'PASS';
-      s.phase = PHASES.OUTCOME_PASS;
-      this._change();
-      this._grantPassExtraCredit(true);
-    } else {
-      s.emit('Project FAILED! Not enough effort.');
-      s.outcomeFlash = 'FAIL';
-      s.phase = PHASES.OUTCOME_FAIL;
-      this._change();
-      this._scheduleAI(1800);
-    }
+    // Store total so UI can display it during the pause
+    s.finalTotal = total;
+    s.phase = PHASES.FINAL_REVEALED;
+    this._change(); // show the revealed card state
+
+    setTimeout(() => {
+      if (total >= s.effortRequired) {
+        s.emit('Project PASSED!');
+        s.outcomeFlash = 'PASS';
+        s.phase = PHASES.OUTCOME_PASS;
+        this._change();
+        this._grantPassExtraCredit(true);
+      } else {
+        s.emit('Project FAILED! Not enough effort.');
+        s.outcomeFlash = 'FAIL';
+        s.phase = PHASES.OUTCOME_FAIL;
+        this._change();
+        this._scheduleAI(1800);
+      }
+    }, 2500);
   }
 
   useSkill(skill) {
@@ -937,21 +929,28 @@ class Game {
 
     const allCards = s.effortPileRevealed.map(e => e.card);
     const total = calculateEffortTotal(allCards, s.currentProject.condition, skill);
-    s.emit(`Total effort after skill: ${total}. Required: ${s.effortRequired}.`);
+    s.emit(`Total effort after ${skill.name}: ${total}. Required: ${s.effortRequired}.`);
 
-    if (total >= s.effortRequired) {
-      s.emit(`Project PASSED via ${skill.name}!`);
-      s.outcomeFlash = 'PASS';
-      s.phase = PHASES.OUTCOME_PASS;
-      this._change();
-      this._grantPassExtraCredit(false); // no extra credit when skill used
-    } else {
-      s.emit(`Project FAILED even with ${skill.name}.`);
-      s.outcomeFlash = 'FAIL';
-      s.phase = PHASES.OUTCOME_FAIL;
-      this._change();
-      this._scheduleAI(1800);
-    }
+    // Show the full pile for 2.5s before flashing outcome
+    s.finalTotal = total;
+    s.phase = PHASES.FINAL_REVEALED;
+    this._change();
+
+    setTimeout(() => {
+      if (total >= s.effortRequired) {
+        s.emit(`Project PASSED via ${skill.name}!`);
+        s.outcomeFlash = 'PASS';
+        s.phase = PHASES.OUTCOME_PASS;
+        this._change();
+        this._grantPassExtraCredit(false);
+      } else {
+        s.emit(`Project FAILED even with ${skill.name}.`);
+        s.outcomeFlash = 'FAIL';
+        s.phase = PHASES.OUTCOME_FAIL;
+        this._change();
+        this._scheduleAI(1800);
+      }
+    }, 2500);
   }
 
   // Accountability resolution
@@ -1004,17 +1003,18 @@ class Game {
       s.emit(`${s.playerNames[s.projectLeaderIndex]} earns Extra Credit!`);
       s.nominationPending = true;
       s.phase = PHASES.NOMINATE;
+      this._change();
+      if (s.projectLeaderIndex !== 0) {
+        this._scheduleAI(800);
+      }
+      // If human is PL, they nominate via UI which calls nominateForExtraCredit()
     } else {
-      // Passed via skill — no extra credit this semester
+      // Passed via skill — skip nomination, go straight to end
       s.nominationPending = false;
       s.phase = PHASES.END_OF_SEMESTER;
-    }
-    this._change();
-    if (s.phase === PHASES.NOMINATE && s.projectLeaderIndex !== 0) {
-      this._scheduleAI(800);
-    }
-    if (s.phase === PHASES.END_OF_SEMESTER) {
-      this._scheduleAI(800);
+      this._change();
+      // Directly advance — _tickAI has no END_OF_SEMESTER case, so call endSemester
+      setTimeout(() => this.endSemester(), 1200);
     }
   }
 
@@ -1026,7 +1026,8 @@ class Game {
     s.nominationPending = false;
     s.phase = PHASES.END_OF_SEMESTER;
     this._change();
-    this._scheduleAI(600);
+    // endSemester handles PL rotation and semester advancement
+    setTimeout(() => this.endSemester(), 800);
   }
 
   // ── Blame Vote ───────────────────────────────────────────
@@ -1196,7 +1197,7 @@ class Game {
   _processSnitchAttempt(snitcherIndex, targetIndex) {
     const s = this.state;
     const snitcherPile = s.partyPiles[snitcherIndex];
-    const targetPile = s.partyPiles[targetIndex];
+    const targetPile   = s.partyPiles[targetIndex];
 
     if (snitcherPile.length === 0 || targetPile.length === 0) {
       s.emit('Snitch failed — missing party cards.');
@@ -1206,18 +1207,41 @@ class Game {
     }
 
     const snitcherTop = snitcherPile[snitcherPile.length - 1];
-    const targetTop = targetPile[targetPile.length - 1];
+    const targetTop   = targetPile[targetPile.length - 1];
     const sv = snitcherTop.isCopy ? 0 : snitcherTop.value;
-    const tv = targetTop.isCopy ? 0 : targetTop.value;
+    const tv = targetTop.isCopy  ? 0 : targetTop.value;
 
-    s.emit(`${s.playerNames[snitcherIndex]} snitches on ${s.playerNames[targetIndex]}! Revealed: ${tv} vs ${sv}.`);
+    s.emit(`${s.playerNames[snitcherIndex]} snitches on ${s.playerNames[targetIndex]}!`);
 
-    if (tv >= sv) {
-      // Snitch succeeds
+    // Gather all top party cards for the reveal popup
+    const allTopCards = [0,1,2,3].map(i => {
+      if (s.expelled[i] || s.partyPiles[i].length === 0) return null;
+      return { playerIndex: i, card: s.partyPiles[i][s.partyPiles[i].length - 1] };
+    }).filter(Boolean);
+
+    s.snitchReveal = {
+      snitcherIndex, targetIndex,
+      snitcherCard: snitcherTop, targetCard: targetTop,
+      snitcherVal: sv, targetVal: tv,
+      allTopCards,
+      result: tv >= sv ? 'success' : 'fail',
+    };
+    s.phase = PHASES.SNITCH_REVEAL;
+    this._change();
+    // UI animates the reveal, then calls game.completeSnitchReveal()
+  }
+
+  // Called by UI after the snitch animation finishes
+  completeSnitchReveal() {
+    const s = this.state;
+    if (s.phase !== PHASES.SNITCH_REVEAL) return;
+    const { snitcherIndex, targetIndex, result } = s.snitchReveal;
+    s.phase = PHASES.SNITCH;
+
+    if (result === 'success') {
       s.emit(`Snitch SUCCESS! ${s.playerNames[targetIndex]} takes a Fail.`);
       this._giveFail(targetIndex);
       s.snitchChain.push({ snitcher: snitcherIndex, target: targetIndex, result: 'success' });
-      // Target may now snitch
       if (!s.expelled[targetIndex]) {
         s.currentSnitchPlayer = targetIndex;
         s.emit(`${s.playerNames[targetIndex]} may now snitch. Top Party card: ${this._topPartyCardStr(targetIndex)}`);
@@ -1227,7 +1251,6 @@ class Game {
         this.endSemester();
       }
     } else {
-      // Snitch fails
       s.emit(`Snitch FAILED! ${s.playerNames[snitcherIndex]} takes an extra Fail.`);
       this._giveFail(snitcherIndex);
       s.snitchChain.push({ snitcher: snitcherIndex, target: targetIndex, result: 'fail' });
@@ -1478,6 +1501,7 @@ class Game {
 }
 
 // Expose globally for index.html
-window.Game = Game;
+window.Game  = Game;
 window.PHASES = PHASES;
 window.calculateEffortTotal = calculateEffortTotal;
+// game.completeSnitchReveal() is called by UI after snitch animation
