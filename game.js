@@ -509,7 +509,8 @@ class Game {
 
     // Draw project
     s.currentProject = s.projectDeck[s.semester - 1];
-    s.effortRequired = s.currentProject.effort + s.curveCarryover;
+    const activePlayers = [0,1,2,3].filter(i => !s.expelled[i]).length;
+    s.effortRequired = Math.round(s.currentProject.effort * activePlayers / 4) + s.curveCarryover;
     s.curveCarryover = 0;
     s.effortPile = [];
     s.effortPileRevealed = [];
@@ -617,15 +618,19 @@ class Game {
 
       case PHASES.NOMINATE:
         if (!isHumanPL) {
-          // AI nominates player with lowest top party card (most deserving)
           const candidates = [0,1,2,3].filter(i => i !== pl && !s.expelled[i]);
-          if (candidates.length > 0) {
+          if (candidates.length === 0) {
+            // No one to nominate — skip straight to end of semester
+            s.nominationPending = false;
+            s.phase = PHASES.END_OF_SEMESTER;
+            this._change();
+            setTimeout(() => this.endSemester(), 800);
+          } else {
             const pick = candidates.reduce((best, i) => {
-              if (s.partyPiles[i].length === 0) return best;
-              const top = s.partyPiles[i][s.partyPiles[i].length - 1];
-              const topBest = s.partyPiles[best][s.partyPiles[best].length - 1];
-              const tv = top ? (top.isCopy ? 0 : top.value) : 0;
-              const bv = topBest ? (topBest.isCopy ? 0 : topBest.value) : 0;
+              const pile = s.partyPiles[i];
+              const bestPile = s.partyPiles[best];
+              const tv = pile.length > 0 ? (pile[pile.length-1].isCopy ? 0 : pile[pile.length-1].value) : 0;
+              const bv = bestPile.length > 0 ? (bestPile[bestPile.length-1].isCopy ? 0 : bestPile[bestPile.length-1].value) : 0;
               return tv < bv ? i : best;
             }, candidates[0]);
             this.nominateForExtraCredit(pick);
@@ -1136,6 +1141,7 @@ class Game {
   _giveFail(playerIndex) {
     const s = this.state;
     s.fails[playerIndex]++;
+    s.failFlash = { playerIndex, count: s.fails[playerIndex], ts: Date.now() };
     if (!s.playersWhoTookFailThisSemester.includes(playerIndex)) {
       s.playersWhoTookFailThisSemester.push(playerIndex);
     }
@@ -1237,7 +1243,8 @@ class Game {
     };
     s.phase = PHASES.SNITCH_REVEAL;
     this._change();
-    // UI animates the reveal, then calls game.completeSnitchReveal()
+    // Auto-complete after 4.5 s (gives UI time to animate + show result)
+    setTimeout(() => this.completeSnitchReveal(), 4500);
   }
 
   // Called by UI after the snitch animation finishes
