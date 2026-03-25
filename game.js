@@ -642,7 +642,34 @@ class Game {
         // All AI players draw break pairs; human draws manually
         this._aiBreakDraw();
         break;
+
+      case 'SKILL_ACCOUNTABILITY':
+        // AI PL auto-resolves: highest revealed party card swaps with lowest effort card
+        if (!isHumanPL) this._aiResolveAccountability();
+        break;
+
+      case 'SKILL_EXTEND':
+        this.processExtendDeadline();
+        break;
     }
+  }
+
+  _aiResolveAccountability() {
+    const s = this.state;
+    const cards = s.accountabilityRevealedCards;
+    if (!cards || cards.length === 0) {
+      // Nothing to swap — just resolve
+      this.resolveAccountability(-1);
+      return;
+    }
+    let highest = -1;
+    let winner = cards[0].playerIndex;
+    cards.forEach(({ playerIndex, card }) => {
+      const v = card.isCopy ? 0 : card.value;
+      if (v > highest) { highest = v; winner = playerIndex; }
+    });
+    s.emit(`Accountability: ${s.playerNames[winner]} has highest party card (${highest}) — swapping with lowest effort card.`);
+    this.resolveAccountability(winner);
   }
 
   // ── Card Selection ───────────────────────────────────────
@@ -842,11 +869,11 @@ class Game {
 
       case 'realign_priorities': {
         // Pick another player to swap final card with their top party card
+        s.pendingSkill = skill;
         if (s.projectLeaderIndex === 0) {
-          s.pendingSkill = skill;
           s.phase = 'SKILL_REALIGN';
           this._change();
-          return;
+          return; // human picks via modal → humanRealign() → _executeRealign()
         } else {
           // AI: pick player with highest top party card
           const candidates = [0,1,2,3].filter(i => i !== s.projectLeaderIndex && !s.expelled[i] && s.partyPiles[i].length > 0);
@@ -859,9 +886,12 @@ class Game {
               return iv > bv ? i : best;
             }, candidates[0]);
             this._executeRealign(target);
+          } else {
+            // No valid targets — resolve without swap
+            this._resolveWithSkill(skill);
           }
+          return; // _executeRealign already calls _resolveWithSkill; don't fall through
         }
-        break;
       }
 
       case 'extend_deadline': {
@@ -916,7 +946,7 @@ class Game {
     // Return effort card to player's hand (as per rulebook spirit)
     s.hands[targetPlayerIndex].push(finalCard);
     s.emit(`${s.playerNames[targetPlayerIndex]}'s top party card (${topParty.isCopy ? 'X2 Copy' : topParty.value}) swapped into effort pile.`);
-    this._resolveWithSkill(s.pendingSkill || { id: 'realign_priorities' });
+    this._resolveWithSkill(s.pendingSkill || { id: 'realign_priorities', name: 'Realign Priorities' });
   }
 
   humanRealign(targetPlayerIndex) {
@@ -970,18 +1000,23 @@ class Game {
   // Accountability resolution
   resolveAccountability(winnerIndex) {
     const s = this.state;
-    // winner swaps top party card with lowest effort card
-    const partyCard = s.partyPiles[winnerIndex].pop();
-    const effortCards = s.effortPileRevealed.map(e => e.card).filter(c => !c.isCopy);
-    if (effortCards.length > 0) {
-      effortCards.sort((a, b) => a.value - b.value);
-      const lowest = effortCards[0];
-      // Replace lowest in pile
-      const idx = s.effortPileRevealed.findIndex(e => e.card.uid === lowest.uid);
-      if (idx !== -1) s.effortPileRevealed[idx].card = partyCard;
-      // Return lowest effort card to player's hand
-      s.hands[winnerIndex].push(lowest);
+
+    if (winnerIndex >= 0 && s.partyPiles[winnerIndex] && s.partyPiles[winnerIndex].length > 0) {
+      // Winner swaps top party card with lowest effort card in the revealed pile
+      const partyCard = s.partyPiles[winnerIndex].pop();
+      const effortCards = s.effortPileRevealed.map(e => e.card).filter(c => !c.isCopy);
+      if (effortCards.length > 0) {
+        effortCards.sort((a, b) => a.value - b.value);
+        const lowest = effortCards[0];
+        const idx = s.effortPileRevealed.findIndex(e => e.card.uid === lowest.uid);
+        if (idx !== -1) s.effortPileRevealed[idx].card = partyCard;
+        s.hands[winnerIndex].push(lowest);
+        s.emit(`${s.playerNames[winnerIndex]}'s top party card swaps with the lowest effort card.`);
+      }
+    } else {
+      s.emit('Accountability: no valid swap — proceeding.');
     }
+
     s.phase = PHASES.DAY_OF_DEADLINE;
     s.pendingSkill = null;
     this._resolveWithSkill({ id: 'accountability', name: 'Accountability' });
