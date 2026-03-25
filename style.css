@@ -16,8 +16,8 @@
   --green-light:#2ecc71;
   --white:     #f0f4f8;
   --muted:     #8899aa;
-  --card-w:    88px;
-  --card-h:    124px;
+  --card-w:    120px;
+  --card-h:    168px;
   --radius:    8px;
   --shadow:    0 4px 16px rgba(0,0,0,0.5);
 }
@@ -630,6 +630,43 @@ html, body {
   50%       { box-shadow: 0 0 0 8px rgba(241,196,15,0); }
 }
 .pulse { animation: pulse 1s ease infinite; }
+
+/* ── Outcome Flash ────────────────────────────────────────── */
+
+#outcome-flash {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+#outcome-flash.active { display: flex; }
+
+#outcome-flash .flash-text {
+  font-size: 9rem;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  text-shadow: 0 4px 40px rgba(0,0,0,0.8);
+  animation: flashIn 0.25s ease, flashOut 0.5s ease 1.2s forwards;
+  opacity: 1;
+}
+
+#outcome-flash.pass .flash-text { color: var(--green-light); }
+#outcome-flash.fail .flash-text { color: var(--red-light); }
+
+@keyframes flashIn {
+  from { transform: scale(0.4); opacity: 0; }
+  to   { transform: scale(1.05); opacity: 1; }
+}
+
+@keyframes flashOut {
+  from { transform: scale(1.05); opacity: 1; }
+  to   { transform: scale(1.15); opacity: 0; }
+}
 
 /* ── Scrollbar ────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }

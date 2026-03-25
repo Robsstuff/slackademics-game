@@ -199,6 +199,11 @@
   </div>
 </div>
 
+<!-- Outcome Flash -->
+<div id="outcome-flash">
+  <span class="flash-text" id="flash-text"></span>
+</div>
+
 <!-- Scripts -->
 <script src="data.js"></script>
 <script src="game.js"></script>
@@ -243,6 +248,19 @@ const UI = (() => {
     showScreen('screen-title');
   }
 
+  // ── Outcome Flash ─────────────────────────────────────────
+  let _lastFlash = null;
+  function triggerFlash(result) {
+    if (_lastFlash === result) return;
+    _lastFlash = result;
+    const el = document.getElementById('outcome-flash');
+    const txt = document.getElementById('flash-text');
+    el.className = '';
+    txt.textContent = result === 'PASS' ? 'PASSED!' : 'FAILED!';
+    el.classList.add('active', result === 'PASS' ? 'pass' : 'fail');
+    setTimeout(() => { el.className = ''; _lastFlash = null; }, 1800);
+  }
+
   // ── Main Render ───────────────────────────────────────────
   function renderState(state) {
     if (!state) return;
@@ -250,6 +268,11 @@ const UI = (() => {
     if (state.phase === PHASES.GAME_OVER) {
       renderGameOver(state);
       return;
+    }
+
+    if (state.outcomeFlash) {
+      triggerFlash(state.outcomeFlash);
+      state.outcomeFlash = null;
     }
 
     renderHeader(state);
@@ -466,21 +489,17 @@ const UI = (() => {
         break;
 
       case PHASES.REVEAL:
-        msgEl.textContent = 'Revealing effort cards one by one. Do not reveal the last card yet!';
-        if (isHumanPL) {
-          addBtn(btnsEl, 'Reveal Next Card', 'btn-primary', () => game.revealNextCard());
-        } else {
-          addBtn(btnsEl, 'Reveal Next Card', 'btn-muted', () => game.revealNextCard());
-        }
+        msgEl.textContent = `Revealing cards automatically... (${state.effortPileRevealed.length} of ${state.effortPile.length - 1} revealed)`;
         break;
 
       case PHASES.DAY_OF_DEADLINE:
-        msgEl.textContent = `Day of the Deadline! One card remains. Effort still needed: ${Math.max(0, state.effortRemaining)}.`;
+        msgEl.textContent = `Day of the Deadline! One card remains face-down. Effort still needed: ${Math.max(0, state.effortRemaining)}.`;
         if (isHumanPL) {
-          addBtn(btnsEl, 'Let It Ride!', 'btn-success', () => game.letItRide());
-          addBtn(btnsEl, 'Use a Leadership Skill', 'btn-primary',
-            () => msgEl.textContent = 'Click a skill on the left panel.',
-            state.skillsAvailable.length === 0);
+          addBtn(btnsEl, 'Let It Ride! (Reveal Final Card)', 'btn-success', () => game.letItRide());
+          if (state.skillsAvailable.length > 0) {
+            addBtn(btnsEl, 'Use a Leadership Skill', 'btn-primary',
+              () => { msgEl.textContent = 'Click a skill card on the left panel.'; });
+          }
         } else {
           msgEl.textContent += ` ${plName} is deciding...`;
         }

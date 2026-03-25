@@ -527,6 +527,9 @@ class Game {
     s.snitchChain = [];
     s.snitchActive = false;
     s.nominationPending = false;
+    s.accusedIndex = -1;
+    s.votes = [-1, -1, -1, -1];
+    s.outcomeFlash = null;
 
     s.phase = PHASES.SEMESTER_START;
     s.emit(`Semester ${s.semester}: ${s.currentProject.code} — ${s.currentProject.title}. Effort required: ${s.effortRequired}.`);
@@ -540,6 +543,32 @@ class Game {
   _scheduleAI(delay = 800) {
     if (this._pendingAiDelay) clearTimeout(this._pendingAiDelay);
     this._pendingAiDelay = setTimeout(() => this._tickAI(), delay);
+  }
+
+  // Auto-reveal: fires every 1500ms, stops when we reach Day of Deadline
+  _startAutoReveal() {
+    this._clearRevealTimer();
+    // If only 1 card total, go straight to Day of Deadline
+    if (this.state.effortPile.length <= 1) {
+      this.state.phase = PHASES.DAY_OF_DEADLINE;
+      const s = this.state;
+      s.effortRemaining = s.effortRequired;
+      s.emit(`Day of the Deadline! One card remains. Effort still needed: ${s.effortRequired}.`);
+      this._change();
+      if (s.projectLeaderIndex !== 0) this._scheduleAI(1000);
+      return;
+    }
+    this._revealTimer = setInterval(() => {
+      if (this.state.phase !== PHASES.REVEAL) {
+        this._clearRevealTimer();
+        return;
+      }
+      this.revealNextCard();
+    }, 1500);
+  }
+
+  _clearRevealTimer() {
+    if (this._revealTimer) { clearInterval(this._revealTimer); this._revealTimer = null; }
   }
 
   _tickAI() {
@@ -572,6 +601,14 @@ class Game {
         if (!isHumanPL) {
           this._aiDayOfDeadline();
         }
+        break;
+
+      case PHASES.OUTCOME_FAIL:
+        this._startBlameVote();
+        break;
+
+      case PHASES.VOTE_RESULT:
+        this._startSnitch();
         break;
 
       case PHASES.BLAME_VOTE:
@@ -696,8 +733,9 @@ class Game {
     s.effortRemaining = s.effortRequired;
 
     s.phase = PHASES.REVEAL;
-    s.emit('Cards are in. The Project Leader begins the reveal...');
+    s.emit('Cards are in. Revealing...');
     this._change();
+    this._startAutoReveal();
   }
 
   // ── Reveal ───────────────────────────────────────────────
@@ -719,10 +757,11 @@ class Game {
       this._change();
     } else {
       // All but last revealed — move to Day of Deadline
+      this._clearRevealTimer();
       s.phase = PHASES.DAY_OF_DEADLINE;
       s.emit(`Day of the Deadline! One card remains. Effort still needed: ${Math.max(0, s.effortRemaining)}.`);
       this._change();
-      if (s.projectLeaderIndex !== 0) this._scheduleAI(1000);
+      if (s.projectLeaderIndex !== 0) this._scheduleAI(1500);
     }
   }
 
@@ -744,13 +783,16 @@ class Game {
 
     if (total >= s.effortRequired) {
       s.emit('Project PASSED via Let It Ride!');
+      s.outcomeFlash = 'PASS';
       s.phase = PHASES.OUTCOME_PASS;
+      this._change();
       this._grantPassExtraCredit(true);
     } else {
       s.emit('Project FAILED! Not enough effort.');
+      s.outcomeFlash = 'FAIL';
       s.phase = PHASES.OUTCOME_FAIL;
       this._change();
-      this._scheduleAI(800);
+      this._scheduleAI(1800);
     }
   }
 
@@ -899,13 +941,16 @@ class Game {
 
     if (total >= s.effortRequired) {
       s.emit(`Project PASSED via ${skill.name}!`);
+      s.outcomeFlash = 'PASS';
       s.phase = PHASES.OUTCOME_PASS;
+      this._change();
       this._grantPassExtraCredit(false); // no extra credit when skill used
     } else {
       s.emit(`Project FAILED even with ${skill.name}.`);
+      s.outcomeFlash = 'FAIL';
       s.phase = PHASES.OUTCOME_FAIL;
       this._change();
-      this._scheduleAI(800);
+      this._scheduleAI(1800);
     }
   }
 
@@ -941,7 +986,7 @@ class Game {
 
   // Extend Deadline flow
   _aiBreakDraw() {
-    // handled below in semesterBreak section
+    this._aiBreakDrawAll();
   }
 
   // ── Pass / Extra Credit ──────────────────────────────────
@@ -1302,8 +1347,7 @@ class Game {
     }
 
     this._drawPair(0, pair);
-    // AI draw
-    this._aiBreakDrawAll();
+    // AI already drew when semester break started; just advance
     s.phase = PHASES.END_OF_SEMESTER;
     this._change();
     setTimeout(() => this.advanceToSemesterStart(), 1500);
