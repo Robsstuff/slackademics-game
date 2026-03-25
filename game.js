@@ -804,8 +804,8 @@ class Game {
 
     s.emit(`${s.playerNames[s.projectLeaderIndex]} uses Leadership Skill: ${skill.name}!`);
     s.skillsAvailable = s.skillsAvailable.filter(sk => sk.id !== skill.id);
-    // Used skill goes to bottom of deck
-    s.skillDeck.push(skill);
+    s.skillDeck.push(skill); // used skill goes to bottom of deck
+    this._drawSkills(s);     // immediately refill so at least 1 is always available
 
     // Handle skills that require phase-level interaction
     switch (skill.id) {
