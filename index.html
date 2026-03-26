@@ -101,8 +101,13 @@
     <div id="action-buttons"></div>
   </div>
 
-  <!-- Log strip -->
-  <div id="log-section"><p id="log-latest"></p></div>
+  <!-- Game Log Panel -->
+  <div id="game-log-panel">
+    <button id="log-toggle-btn" onclick="UI.toggleLog()" aria-label="Toggle log">
+      LOG <span id="log-badge">0</span>
+    </button>
+    <div id="game-log-list" class="log-hidden"></div>
+  </div>
 
 </div><!-- /screen-game -->
 
@@ -198,6 +203,38 @@
   </div>
 </div>
 
+<!-- Blame Spin Overlay -->
+<div id="modal-blame-spin" class="overlay">
+  <div class="blame-spin-container">
+    <div class="blame-header" id="blame-header">Blame Vote</div>
+    <div class="blame-grid">
+      <!-- grid: row 1 = AI1 | AI2 -->
+      <div class="blame-slot" id="blame-slot-1"></div>
+      <div class="blame-slot" id="blame-slot-2"></div>
+      <!-- centre row: empty | spinner | empty -->
+      <div></div>
+      <div class="blame-center-cell">
+        <div class="blame-spinner-wrap">
+          <div id="blame-arrow"></div>
+        </div>
+      </div>
+      <div></div>
+      <!-- row 3: YOU | empty | AI3 -->
+      <div class="blame-slot" id="blame-slot-0"></div>
+      <div class="blame-slot" id="blame-slot-3"></div>
+    </div>
+    <div class="blame-footer" id="blame-footer"></div>
+  </div>
+</div>
+
+<!-- EC Flash -->
+<div id="ec-flash" style="display:none;position:fixed;inset:0;z-index:210;pointer-events:none;align-items:center;justify-content:center;flex-direction:column;gap:16px">
+  <div style="width:min(160px,40vw);border-radius:10px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,0.8)">
+    <img src="assets/other/Extracredit.jpg" style="width:100%;height:auto;display:block" onerror="this.style.display='none'" />
+  </div>
+  <div id="ec-flash-name" style="font-size:clamp(1rem,4vw,1.3rem);font-weight:900;color:#f1c40f;text-shadow:0 2px 12px rgba(0,0,0,0.8);text-align:center;padding:0 20px"></div>
+</div>
+
 <!-- Outcome Flash -->
 <div id="outcome-flash">
   <span class="flash-text" id="flash-text"></span>
@@ -254,9 +291,11 @@ const UI = (() => {
       case PHASES.CARD_SELECTION: switchTab('hand'); break;
       case PHASES.REVEAL:
       case PHASES.DAY_OF_DEADLINE:
+      case PHASES.SKILL_ANNOUNCING:
       case PHASES.FINAL_REVEALED: switchTab('pile'); break;
       case PHASES.OUTCOME_PASS:
       case PHASES.OUTCOME_FAIL:
+      case PHASES.BLAME_SPINNING:
       case PHASES.BLAME_VOTE:
       case PHASES.VOTE_RESULT:
       case PHASES.SNITCH_REVEAL: switchTab('project'); break;
@@ -291,83 +330,202 @@ const UI = (() => {
   }
 
   // ── Snitch Reveal Popup ───────────────────────────────────
+  // Only shows the two relevant players: snitcher and target.
   let _snitchRevealDone = false;
   function renderSnitchReveal(rev, state) {
     if (_snitchRevealDone && document.getElementById('modal-snitch-reveal').classList.contains('active')) return;
     _snitchRevealDone = true;
 
-    const title    = document.getElementById('snitch-reveal-title');
-    const subtitle = document.getElementById('snitch-reveal-subtitle');
-    const grid     = document.getElementById('snitch-reveal-grid');
-    const banner   = document.getElementById('snitch-result-banner');
+    const title  = document.getElementById('snitch-reveal-title');
+    const sub    = document.getElementById('snitch-reveal-subtitle');
+    const grid   = document.getElementById('snitch-reveal-grid');
+    const banner = document.getElementById('snitch-result-banner');
 
-    title.textContent = `${state.playerNames[rev.snitcherIndex]} snitches on ${state.playerNames[rev.targetIndex]}!`;
-    subtitle.textContent = 'Top Party Pile cards revealed one by one...';
-    grid.innerHTML = '';
+    title.textContent = `${state.playerNames[rev.snitcherIndex]} snitches!`;
+    sub.textContent   = `on ${state.playerNames[rev.targetIndex]}`;
+    grid.innerHTML    = '';
     banner.style.display = 'none';
 
-    // Build a slot for every active player
-    const allCards = rev.allTopCards; // [{playerIndex, card}]
+    // Two slots only: snitcher (left) and target (right)
+    const two = [
+      { pi: rev.snitcherIndex, card: rev.snitcherCard, label: 'SNITCHING', cls: 'snitcher' },
+      { pi: rev.targetIndex,   card: rev.targetCard,   label: 'TARGET',    cls: 'target'   },
+    ];
+
+    grid.style.display = 'flex';
+    grid.style.gap = '20px';
+    grid.style.justifyContent = 'center';
+
     const slots = {};
-    allCards.forEach(({ playerIndex, card }) => {
+    two.forEach(({ pi, card, label, cls }) => {
       const slot = document.createElement('div');
-      slot.className = 'snitch-player-slot' +
-        (playerIndex === rev.snitcherIndex ? ' snitcher' : '') +
-        (playerIndex === rev.targetIndex   ? ' target'   : '');
+      slot.className = `snitch-player-slot ${cls}`;
+      slot.style.minWidth = 'calc(var(--card-w) + 20px)';
       slot.innerHTML = `
-        <div class="snitch-player-name">${state.playerNames[playerIndex]}</div>
-        <div class="snitch-card-flip" id="snitch-flip-${playerIndex}">
+        <div class="snitch-player-name">${state.playerNames[pi]}</div>
+        <div class="snitch-card-flip" id="snitch-flip-${pi}">
           <div class="snitch-card-inner">
             <div class="snitch-card-back"></div>
             <div class="snitch-card-face">
-              <img src="${IMG.effort(card.isCopy ? 'copy' : card.value)}" alt="${card.isCopy ? 'Copy' : card.value}"
+              <img src="${IMG.effort(card.isCopy ? 'copy' : card.value)}"
                    onerror="this.style.opacity='0.2'" />
-              <span class="snitch-card-value">${card.isCopy ? 'x2' : card.value}</span>
+              <span class="snitch-card-value${card.isCopy ? '" style="background:var(--red);color:#fff' : ''}"
+                >${card.isCopy ? 'x2' : card.value}</span>
             </div>
           </div>
         </div>
-        <div style="font-size:0.72rem;color:var(--muted)">${state.playerNames[playerIndex] === state.playerNames[rev.snitcherIndex] ? 'SNITCHING' : (playerIndex === rev.targetIndex ? 'TARGET' : '')}</div>`;
+        <div style="font-size:0.7rem;color:var(--muted);font-weight:700;letter-spacing:0.06em">${label}</div>`;
       grid.appendChild(slot);
-      slots[playerIndex] = slot.querySelector('.snitch-card-flip');
+      slots[pi] = slot.querySelector('.snitch-card-flip');
     });
 
-    // Flip cards one by one every 700ms
-    let flipIdx = 0;
-    const cardOrder = allCards.map(e => e.playerIndex);
-
-    function flipNext() {
-      if (flipIdx >= cardOrder.length) {
-        // All flipped — show result after 600ms pause
-        setTimeout(() => {
-          const sv = rev.snitcherVal;
-          const tv = rev.targetVal;
-          const success = rev.result === 'success';
-          banner.className = 'snitch-result-banner ' + (success ? 'success' : 'fail');
-          banner.textContent = success
-            ? `SUCCESS! ${state.playerNames[rev.targetIndex]}'s card (${tv}) >= ${state.playerNames[rev.snitcherIndex]}'s card (${sv}) — they take a FAIL!`
-            : `FAILED! ${state.playerNames[rev.targetIndex]}'s card (${tv}) < ${state.playerNames[rev.snitcherIndex]}'s card (${sv}) — snitcher takes an extra FAIL!`;
-          banner.style.display = 'block';
-        }, 600);
-        return;
+    // Flip snitcher at 0.8s, target at 2.0s, banner at 3.2s
+    setTimeout(() => { if (slots[rev.snitcherIndex]) slots[rev.snitcherIndex].classList.add('flipped'); }, 800);
+    setTimeout(() => { if (slots[rev.targetIndex])   slots[rev.targetIndex].classList.add('flipped'); }, 2000);
+    setTimeout(() => {
+      const sv = rev.snitcherVal;
+      const tv = rev.targetVal;
+      const success = rev.result === 'success';
+      banner.className = 'snitch-result-banner ' + (success ? 'success' : 'fail');
+      banner.style.display = 'block';
+      if (success) {
+        banner.innerHTML = `SUCCESS!<br><span style="font-size:0.62em">
+          ${state.playerNames[rev.snitcherIndex]}: ${sv} &lt; ${state.playerNames[rev.targetIndex]}: ${tv}<br>
+          ${state.playerNames[rev.targetIndex]} takes a Fail!</span>`;
+      } else {
+        banner.innerHTML = `SNITCH FAILED!<br><span style="font-size:0.62em">
+          ${state.playerNames[rev.snitcherIndex]}: ${sv} &ge; ${state.playerNames[rev.targetIndex]}: ${tv}<br>
+          ${state.playerNames[rev.snitcherIndex]} takes an extra Fail!</span>`;
       }
-      const pi = cardOrder[flipIdx++];
-      const flipEl = slots[pi];
-      if (flipEl) flipEl.classList.add('flipped');
-      setTimeout(flipNext, 750);
-    }
-    flipNext();
+    }, 3200);
+
     showOverlay('modal-snitch-reveal');
+  }
+
+  // ── Game Log ─────────────────────────────────────────────
+  let _logOpen = false;
+  let _logCount = 0;
+
+  function appendLog(msg) {
+    _logCount++;
+    const badge = document.getElementById('log-badge');
+    if (badge) badge.textContent = _logCount;
+
+    const list = document.getElementById('game-log-list');
+    if (!list) return;
+    const p = document.createElement('p');
+    p.className = 'log-item';
+    p.textContent = msg;
+    list.appendChild(p);
+    // Keep max 60 entries
+    while (list.children.length > 60) list.removeChild(list.firstChild);
+    if (_logOpen) list.scrollTop = list.scrollHeight;
+  }
+
+  function toggleLog() {
+    _logOpen = !_logOpen;
+    const list = document.getElementById('game-log-list');
+    const btn  = document.getElementById('log-toggle-btn');
+    if (!list) return;
+    list.className = _logOpen ? 'log-open' : 'log-hidden';
+    if (_logOpen) list.scrollTop = list.scrollHeight;
+    if (btn) btn.classList.toggle('log-open', _logOpen);
+  }
+
+  // ── EC Flash ──────────────────────────────────────────────
+  let _lastECFlashTs = 0;
+  function triggerECFlash(state) {
+    const ecf = state.extraCreditFlash;
+    if (!ecf || ecf.ts === _lastECFlashTs) return;
+    _lastECFlashTs = ecf.ts;
+    const el   = document.getElementById('ec-flash');
+    const name = document.getElementById('ec-flash-name');
+    if (!el) return;
+    name.textContent = `${state.playerNames[ecf.playerIndex]} earns Extra Credit! +${EXTRA_CREDIT_POINTS} pts`;
+    el.style.display = 'flex';
+    el.style.animation = '';
+    void el.offsetWidth;
+    el.style.animation = 'flashIn 0.3s ease forwards';
+    clearTimeout(el._t);
+    el._t = setTimeout(() => { el.style.display = 'none'; }, 2500);
+  }
+
+  // ── Blame Spin Overlay ────────────────────────────────────
+  let _blameSpinShown = false;
+
+  function showBlameSpin(state) {
+    if (_blameSpinShown) return;
+    _blameSpinShown = true;
+
+    const pl      = state.projectLeaderIndex;
+    const accused = state.accusedIndex;
+
+    // Player layout in the blame grid:
+    //   Slot-1 (top-left)  | Slot-2 (top-right)
+    //        (centre spinner)
+    //   Slot-0 (bot-left)  | Slot-3 (bot-right)
+    const playerInSlot = { 1: 1, 2: 2, 0: 0, 3: 3 };
+
+    // Angles (degrees, 0 = pointing UP, clockwise):
+    //   slot-1 top-left  → 315  (NW)
+    //   slot-2 top-right → 45   (NE)
+    //   slot-0 bot-left  → 225  (SW)
+    //   slot-3 bot-right → 135  (SE)
+    const slotAngles = { 0: 225, 1: 315, 2: 45, 3: 135 };
+    const targetAngle = slotAngles[accused] ?? 135;
+    const totalSpin = 3 * 360 + targetAngle; // 3 full spins + stop
+
+    // Populate slots
+    for (let slotIdx = 0; slotIdx < 4; slotIdx++) {
+      const pi  = playerInSlot[slotIdx];
+      const el  = document.getElementById(`blame-slot-${slotIdx}`);
+      if (!el) continue;
+      const isBlamee = pi === accused;
+      const isPL     = pi === pl;
+      el.innerHTML = '';
+      el.className = 'blame-slot' + (isPL ? ' blame-pl' : '') + (isBlamee ? ' blame-accused' : '');
+      el.innerHTML = `
+        <div class="blame-player-name">${state.playerNames[pi]}</div>
+        ${isPL ? '<div class="blame-pl-tag">PL</div>' : ''}
+        <div class="blame-fail-row">${buildFailDots(state.fails[pi])}</div>`;
+    }
+
+    document.getElementById('blame-header').textContent =
+      `${state.playerNames[pl]} is choosing who to blame...`;
+    document.getElementById('blame-footer').textContent = '';
+
+    // Start the spin
+    const arrow = document.getElementById('blame-arrow');
+    arrow.style.transition = 'none';
+    arrow.style.transform = 'rotate(0deg)';
+    void arrow.offsetWidth; // flush
+    arrow.style.transition = `transform 3.5s cubic-bezier(0.2,0.9,0.4,1)`;
+    requestAnimationFrame(() => {
+      arrow.style.transform = `rotate(${totalSpin}deg)`;
+    });
+
+    showOverlay('modal-blame-spin');
+
+    // After spin lands, highlight accused slot and show who was picked
+    setTimeout(() => {
+      const accusedSlot = document.getElementById(`blame-slot-${accused}`);
+      if (accusedSlot) accusedSlot.classList.add('blame-pointed');
+      document.getElementById('blame-footer').textContent =
+        `${state.playerNames[accused]} is accused!`;
+    }, 3600);
+
+    // Auto-hide when the game moves on (handled in handlePhaseOverlays)
   }
 
   // ── Start / Restart ───────────────────────────────────────
   function startGame() {
+    _logCount = 0;
+    _logOpen  = false;
+    _blameSpinShown = false;
     showScreen('screen-game');
     switchTab('project');
     game = new Game(renderState);
-    window.onLogMessage = msg => {
-      const el = document.getElementById('log-latest');
-      if (el) el.textContent = msg;
-    };
+    window.onLogMessage = appendLog;
     game.start();
   }
 
@@ -384,8 +542,17 @@ const UI = (() => {
 
     if (state.outcomeFlash) { triggerFlash(state.outcomeFlash); state.outcomeFlash = null; }
     if (state.failFlash)    { triggerFailFlash(state.failFlash); state.failFlash = null; }
+    if (state.extraCreditFlash) triggerECFlash(state);
 
-    // SNITCH_REVEAL: show the snitch popup (auto-completes in engine after 4.5s)
+    // Blame spin
+    if (state.phase === PHASES.BLAME_SPINNING) {
+      showBlameSpin(state);
+    } else {
+      _blameSpinShown = false;
+      hideOverlay('modal-blame-spin');
+    }
+
+    // Snitch reveal
     if (state.phase === PHASES.SNITCH_REVEAL && state.snitchReveal) {
       renderSnitchReveal(state.snitchReveal, state);
     } else {
@@ -573,9 +740,9 @@ const UI = (() => {
       const partyCount = state.partyPiles[i].length;
       const handCount  = state.hands[i].length;
       const topCard    = state.partyPiles[i][state.partyPiles[i].length - 1];
-
-      const showFace = [PHASES.VOTE_RESULT, PHASES.SNITCH].includes(state.phase) ||
+      const showFace   = [PHASES.VOTE_RESULT, PHASES.SNITCH].includes(state.phase) ||
         (state.snitchChain && state.snitchChain.some(s => s.target === i || s.snitcher === i));
+      const ecCount    = (state.extraCredits[i] || []).filter(e => e.type === 'extra_credit').length;
 
       div.innerHTML = `
         <div class="ai-info">
@@ -584,17 +751,26 @@ const UI = (() => {
             ${state.projectLeaderIndex === i ? '<span class="pl-badge">PL</span>' : ''}
           </div>
           <div class="ai-card-count">Hand: ${handCount} &bull; Party: ${partyCount}</div>
-          <div class="fail-tokens" style="display:flex;gap:3px;margin-top:4px" id="fail-tokens-${i}"></div>
+          <div class="token-row" id="tokens-${i}"></div>
         </div>`;
 
-      // Fail token cards (actual Fail card image, small)
-      const tokensEl = div.querySelector(`#fail-tokens-${i}`);
+      const tokensEl = div.querySelector(`#tokens-${i}`);
+      // Fail cards
       for (let f = 0; f < state.fails[i]; f++) {
-        const fimg = document.createElement('img');
-        fimg.src = 'assets/other/Fail.jpg';
-        fimg.alt = 'Fail';
-        fimg.style.cssText = 'width:32px;height:45px;object-fit:cover;border-radius:3px;box-shadow:0 1px 4px rgba(0,0,0,0.5)';
-        tokensEl.appendChild(fimg);
+        const img = document.createElement('img');
+        img.src = 'assets/other/Fail.jpg';
+        img.className = 'token-card';
+        img.title = 'Fail';
+        tokensEl.appendChild(img);
+      }
+      // Extra credit cards
+      for (let e = 0; e < ecCount; e++) {
+        const img = document.createElement('img');
+        img.src = 'assets/other/Extracredit.jpg';
+        img.className = 'token-card ec-token';
+        img.title = `Extra Credit +${EXTRA_CREDIT_POINTS}`;
+        img.onerror = () => { img.style.display = 'none'; };
+        tokensEl.appendChild(img);
       }
 
       if (topCard) {
@@ -690,6 +866,18 @@ const UI = (() => {
         } else {
           msgEl.textContent += ` ${plName} is deciding...`;
         }
+        break;
+
+      case PHASES.SKILL_ANNOUNCING: {
+        const sk = state.activeSkillAnnounce;
+        msgEl.textContent = sk
+          ? `${plName} plays: ${sk.name}! — Resolving in a moment...`
+          : `${plName} is using a Leadership Skill...`;
+        break;
+      }
+
+      case PHASES.BLAME_SPINNING:
+        msgEl.textContent = `${plName} is pointing the finger...`;
         break;
 
       case PHASES.FINAL_REVEALED: {
@@ -1120,21 +1308,38 @@ const UI = (() => {
   }
 
   function handlePhaseOverlays(state) {
-    const voteOpen = state.phase === PHASES.BLAME_VOTE &&
+    const ph = state.phase;
+
+    // Vote modal
+    const voteOpen = ph === PHASES.BLAME_VOTE &&
       !state.expelled[0] && 0 !== state.projectLeaderIndex &&
       0 !== state.accusedIndex && state.accusedIndex !== -1 && state.votes[0] === -1;
     if (!voteOpen) hideOverlay('modal-vote');
-    if (state.phase !== PHASES.SNITCH || state.currentSnitchPlayer !== 0) hideOverlay('modal-snitch');
-    if (state.phase !== PHASES.SNITCH_REVEAL) _snitchRevealDone = false;
-    if (state.phase !== PHASES.SNITCH_REVEAL) hideOverlay('modal-snitch-reveal');
-    if (state.phase !== PHASES.NOMINATE || state.projectLeaderIndex !== 0) hideOverlay('modal-nominate');
-    if (!(state.phase === PHASES.BLAME_VOTE && state.projectLeaderIndex === 0 && state.accusedIndex === -1)) {
+
+    // Snitch decision
+    if (ph !== PHASES.SNITCH || state.currentSnitchPlayer !== 0) hideOverlay('modal-snitch');
+
+    // Snitch reveal
+    if (ph !== PHASES.SNITCH_REVEAL) { _snitchRevealDone = false; hideOverlay('modal-snitch-reveal'); }
+
+    // Nominate
+    if (ph !== PHASES.NOMINATE || state.projectLeaderIndex !== 0) hideOverlay('modal-nominate');
+
+    // Accuse (human PL only)
+    if (!(ph === PHASES.BLAME_VOTE && state.projectLeaderIndex === 0 && state.accusedIndex === -1)) {
       hideOverlay('modal-accuse');
     }
-    if (state.phase !== PHASES.SEMESTER_BREAK && state.phase !== PHASES.BREAK_DRAW) hideOverlay('modal-break');
-    if (state.phase !== 'SKILL_PERSONAL_RESP') hideOverlay('modal-personal-resp');
-    if (state.phase !== 'SKILL_REALIGN')       hideOverlay('modal-realign');
-    if (state.phase !== 'SKILL_ACCOUNTABILITY') hideOverlay('modal-accountability');
+
+    // Break
+    if (ph !== PHASES.SEMESTER_BREAK && ph !== PHASES.BREAK_DRAW) hideOverlay('modal-break');
+
+    // Skill modals
+    if (ph !== 'SKILL_PERSONAL_RESP') hideOverlay('modal-personal-resp');
+    if (ph !== 'SKILL_REALIGN')       hideOverlay('modal-realign');
+    if (ph !== 'SKILL_ACCOUNTABILITY') hideOverlay('modal-accountability');
+
+    // Blame spin — shown/hidden by renderState directly, but also close if now past it
+    if (ph !== PHASES.BLAME_SPINNING)  hideOverlay('modal-blame-spin');
   }
 
   // ── Game Over ─────────────────────────────────────────────
@@ -1223,7 +1428,7 @@ const UI = (() => {
   // Public stubs for HTML onclick attributes
   function passSnitch() { if (game) { game.humanPassSnitch(); hideOverlay('modal-snitch'); } }
 
-  return { startGame, restartGame, switchTab, passSnitch };
+  return { startGame, restartGame, switchTab, passSnitch, toggleLog };
 })();
 </script>
 </body>

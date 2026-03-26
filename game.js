@@ -13,10 +13,12 @@ const PHASES = {
   CARD_SELECTION:    'CARD_SELECTION',
   REVEAL:            'REVEAL',
   DAY_OF_DEADLINE:   'DAY_OF_DEADLINE',
+  SKILL_ANNOUNCING:  'SKILL_ANNOUNCING', // 2s pause so player sees skill before it fires
   FINAL_REVEALED:    'FINAL_REVEALED',   // brief pause after final card flip
   OUTCOME_PASS:      'OUTCOME_PASS',
   NOMINATE:          'NOMINATE',         // PL nominates extra credit recipient
   OUTCOME_FAIL:      'OUTCOME_FAIL',
+  BLAME_SPINNING:    'BLAME_SPINNING',   // AI accuse animation (finger spin)
   BLAME_VOTE:        'BLAME_VOTE',
   VOTE_RESULT:       'VOTE_RESULT',
   SNITCH:            'SNITCH',
@@ -639,8 +641,12 @@ class Game {
         break;
 
       case PHASES.SEMESTER_BREAK:
-        // All AI players draw break pairs; human draws manually
         this._aiBreakDraw();
+        break;
+
+      // These phases are driven by setTimeout — ignore if _tickAI fires during them
+      case PHASES.BLAME_SPINNING:
+      case PHASES.SKILL_ANNOUNCING:
         break;
 
       case 'SKILL_ACCOUNTABILITY':
@@ -834,22 +840,36 @@ class Game {
     if (s.phase !== PHASES.DAY_OF_DEADLINE) return;
     if (!s.skillsAvailable.find(sk => sk.id === skill.id)) return;
 
-    s.emit(`${s.playerNames[s.projectLeaderIndex]} uses Leadership Skill: ${skill.name}!`);
+    // Remove from available and replenish deck
     s.skillsAvailable = s.skillsAvailable.filter(sk => sk.id !== skill.id);
-    s.skillDeck.push(skill); // used skill goes to bottom of deck
-    this._drawSkills(s);     // immediately refill so at least 1 is always available
+    s.skillDeck.push(skill);
+    this._drawSkills(s);
 
-    // Handle skills that require phase-level interaction
+    // Announce — show a 2-second pause so the player can read the skill before it fires
+    s.activeSkillAnnounce = skill;
+    s.phase = PHASES.SKILL_ANNOUNCING;
+    s.emit(`${s.playerNames[s.projectLeaderIndex]} plays: ${skill.name}!`);
+    this._change();
+
+    setTimeout(() => {
+      s.activeSkillAnnounce = null;
+      this._executeSkillBody(skill);
+    }, 2000);
+  }
+
+  // Separated from useSkill so the 2-second announce pause applies to every skill.
+  _executeSkillBody(skill) {
+    const s = this.state;
+    s.phase = PHASES.DAY_OF_DEADLINE; // restore so guards inside work
+
     switch (skill.id) {
       case 'personal_responsibility':
         s.pendingSkill = skill;
         if (s.projectLeaderIndex === 0) {
-          // Human PL: show card selection UI
           s.phase = 'SKILL_PERSONAL_RESP';
           this._change();
           return;
         } else {
-          // AI: swap with best card in hand
           const hand = s.hands[s.projectLeaderIndex];
           if (hand.length > 0) {
             const best = hand.reduce((b, c) => {
@@ -868,14 +888,12 @@ class Game {
         break;
 
       case 'realign_priorities': {
-        // Pick another player to swap final card with their top party card
         s.pendingSkill = skill;
         if (s.projectLeaderIndex === 0) {
           s.phase = 'SKILL_REALIGN';
           this._change();
-          return; // human picks via modal → humanRealign() → _executeRealign()
+          return;
         } else {
-          // AI: pick player with highest top party card
           const candidates = [0,1,2,3].filter(i => i !== s.projectLeaderIndex && !s.expelled[i] && s.partyPiles[i].length > 0);
           if (candidates.length > 0) {
             const target = candidates.reduce((best, i) => {
@@ -887,10 +905,9 @@ class Game {
             }, candidates[0]);
             this._executeRealign(target);
           } else {
-            // No valid targets — resolve without swap
             this._resolveWithSkill(skill);
           }
-          return; // _executeRealign already calls _resolveWithSkill; don't fall through
+          return;
         }
       }
 
@@ -909,7 +926,6 @@ class Game {
       }
 
       case 'accountability': {
-        // Reveal all top party cards
         s.accountabilityRevealedCards = [0,1,2,3].map(i => {
           const pile = s.partyPiles[i];
           return pile.length > 0 ? { playerIndex: i, card: pile[pile.length - 1] } : null;
@@ -928,12 +944,10 @@ class Game {
         break;
 
       default:
-        // All other skills are handled in calculateEffortTotal
         s.pendingSkill = skill;
         break;
     }
 
-    // After skill applied, resolve the final card
     this._resolveWithSkill(skill);
   }
 
@@ -1049,6 +1063,7 @@ class Game {
     if (viLetItRide) {
       // PL gets extra credit; then nominates one other player
       s.extraCredits[s.projectLeaderIndex].push({ type: 'extra_credit', value: EXTRA_CREDIT_POINTS });
+      s.extraCreditFlash = { playerIndex: s.projectLeaderIndex, ts: Date.now() };
       s.emit(`${s.playerNames[s.projectLeaderIndex]} earns Extra Credit!`);
       s.nominationPending = true;
       s.phase = PHASES.NOMINATE;
@@ -1071,6 +1086,7 @@ class Game {
     const s = this.state;
     if (s.phase !== PHASES.NOMINATE) return;
     s.extraCredits[targetIndex].push({ type: 'extra_credit', value: EXTRA_CREDIT_POINTS });
+    s.extraCreditFlash = { playerIndex: targetIndex, ts: Date.now() };
     s.emit(`${s.playerNames[targetIndex]} is nominated and earns Extra Credit!`);
     s.nominationPending = false;
     s.phase = PHASES.END_OF_SEMESTER;
@@ -1083,19 +1099,32 @@ class Game {
 
   _startBlameVote() {
     const s = this.state;
-    s.phase = PHASES.BLAME_VOTE;
     s.votes = [-1, -1, -1, -1];
-    s.emit(`${s.playerNames[s.projectLeaderIndex]} must accuse someone...`);
-    this._change();
+    s.accusedIndex = -1;
 
     if (s.projectLeaderIndex !== 0) {
-      // AI accuses: target player with highest visible party card
+      // AI accuses — show spinning finger animation first
       const candidates = [0,1,2,3].filter(i => i !== s.projectLeaderIndex && !s.expelled[i]);
       if (candidates.length === 0) { this.endSemester(); return; }
       const accused = candidates[Math.floor(Math.random() * candidates.length)];
-      this._scheduleAI(800);
-      this.state.accusedIndex = accused;
-      s.emit(`${s.playerNames[s.projectLeaderIndex]} accuses ${s.playerNames[accused]}!`);
+
+      s.accusedIndex = accused;          // stored so UI knows where to stop the arrow
+      s.phase = PHASES.BLAME_SPINNING;
+      s.emit(`${s.playerNames[s.projectLeaderIndex]} is pointing the finger...`);
+      this._change();
+
+      // Spin takes 3.5s in CSS; we wait 4s then move to voting
+      setTimeout(() => {
+        s.phase = PHASES.BLAME_VOTE;
+        s.emit(`${s.playerNames[s.projectLeaderIndex]} accuses ${s.playerNames[accused]}!`);
+        this._change();
+        this._scheduleAI(600);
+      }, 4000);
+
+    } else {
+      // Human PL — show accuse modal immediately
+      s.phase = PHASES.BLAME_VOTE;
+      s.emit(`You must accuse someone...`);
       this._change();
     }
   }
