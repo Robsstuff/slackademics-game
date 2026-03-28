@@ -19,7 +19,49 @@
        onerror="this.style.display='none'" />
   <h1>Slackademics</h1>
   <p class="tagline">1 vs 3 AI &mdash; Pass university through minimal effort and maximum partying.</p>
-  <button class="btn btn-primary" onclick="UI.startGame()">Start Game</button>
+  <button class="btn btn-primary" onclick="UI.openOptions()">Play</button>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     OPTIONS SCREEN
+═══════════════════════════════════════════════════════════ -->
+<div id="screen-options" class="screen">
+  <h1>Game Options</h1>
+  <p class="tagline">Choose the AI personality for your three opponents.</p>
+
+  <div class="ai-option-grid">
+
+    <div class="ai-option-card" id="ai-opt-balanced" onclick="UI.selectAI('balanced')">
+      <div class="ai-opt-icon">&#9878;</div>
+      <div class="ai-opt-name">Balanced</div>
+      <div class="ai-opt-desc">
+        Mixes strategies each round &mdash; sometimes conservative, sometimes a slacker.
+        Plays high cards to the party pile most of the time, but occasionally surprises you.
+      </div>
+    </div>
+
+    <div class="ai-option-card" id="ai-opt-random" onclick="UI.selectAI('random')">
+      <div class="ai-opt-icon">&#127922;</div>
+      <div class="ai-opt-name">Random</div>
+      <div class="ai-opt-desc">
+        Picks every card completely at random &mdash; effort, party, all of it.
+        Chaotic and unpredictable. Great for a loose, wild game.
+      </div>
+    </div>
+
+    <div class="ai-option-card" id="ai-opt-greedy" onclick="UI.selectAI('greedy')">
+      <div class="ai-opt-icon">&#128176;</div>
+      <div class="ai-opt-name">Greedy</div>
+      <div class="ai-opt-desc">
+        Dumps low cards into assignments and hoards high cards for the party pile.
+        Calculated sandbagging &mdash; not always the absolute minimum, but close.
+      </div>
+    </div>
+
+  </div>
+
+  <button class="btn btn-primary" id="options-start-btn" onclick="UI.startGame()">Start Game</button>
+  <button class="btn btn-muted" style="margin-top:8px" onclick="UI.backToTitle()">Back</button>
 </div>
 
 <!-- ══════════════════════════════════════════════════════════
@@ -30,7 +72,7 @@
   <!-- Header -->
   <div id="game-header">
     <span class="logo">SLACKADEMICS</span>
-    <span id="semester-badge">Semester 1 of 8</span>
+    <div id="semester-progress" title="Semester progress"></div>
     <div id="effort-track-wrap">
       <label>Effort:</label>
       <div id="effort-track-bar"><div id="effort-track-fill" style="width:0%"></div></div>
@@ -175,6 +217,13 @@
     <h2>Semester Break</h2>
     <p id="modal-break-desc">Draw a pair summing to 8. You cannot take the same pair twice (except 4 + X2 Copy).</p>
     <div id="modal-break-pairs"></div>
+    <!-- Semester 6 free pick UI (hidden unless semester 6) -->
+    <div id="modal-free-pick" style="display:none">
+      <p style="font-size:0.85rem;color:var(--muted);margin-bottom:8px">Click two cards to select them, then confirm.</p>
+      <div id="free-pick-grid" style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-bottom:10px"></div>
+      <div id="free-pick-selected" style="font-size:0.9rem;margin-bottom:8px;min-height:1.4em"></div>
+      <button id="free-pick-confirm" class="btn btn-success" style="display:none" onclick="UI.confirmFreePick()">Confirm</button>
+    </div>
   </div>
 </div>
 
@@ -483,7 +532,7 @@ const UI = (() => {
       const isBlamee = pi === accused;
       const isPL     = pi === pl;
       el.innerHTML = '';
-      el.className = 'blame-slot' + (isPL ? ' blame-pl' : '') + (isBlamee ? ' blame-accused' : '');
+      el.className = 'blame-slot' + (isPL ? ' blame-pl' : '');
       el.innerHTML = `
         <div class="blame-player-name">${state.playerNames[pi]}</div>
         ${isPL ? '<div class="blame-pl-tag">PL</div>' : ''}
@@ -509,7 +558,10 @@ const UI = (() => {
     // After spin lands, highlight accused slot and show who was picked
     setTimeout(() => {
       const accusedSlot = document.getElementById(`blame-slot-${accused}`);
-      if (accusedSlot) accusedSlot.classList.add('blame-pointed');
+      if (accusedSlot) {
+        accusedSlot.classList.add('blame-pointed');
+        accusedSlot.classList.add('blame-accused');
+      }
       document.getElementById('blame-footer').textContent =
         `${state.playerNames[accused]} is accused!`;
     }, 3600);
@@ -517,21 +569,46 @@ const UI = (() => {
     // Auto-hide when the game moves on (handled in handlePhaseOverlays)
   }
 
-  // ── Start / Restart ───────────────────────────────────────
+  // ── Options / Start / Restart ─────────────────────────────
+  let _selectedAI = 'balanced';
+
+  function openOptions() {
+    _selectedAI = 'balanced';
+    _applyAISelection('balanced');
+    showScreen('screen-options');
+  }
+
+  function selectAI(mode) {
+    _selectedAI = mode;
+    _applyAISelection(mode);
+  }
+
+  function _applyAISelection(mode) {
+    ['balanced','random','greedy'].forEach(m => {
+      const el = document.getElementById('ai-opt-' + m);
+      if (el) el.classList.toggle('selected', m === mode);
+    });
+  }
+
+  function backToTitle() {
+    showScreen('screen-title');
+  }
+
   function startGame() {
     _logCount = 0;
     _logOpen  = false;
     _blameSpinShown = false;
     showScreen('screen-game');
     switchTab('project');
-    game = new Game(renderState);
+    game = new Game(renderState, _selectedAI);
     window.onLogMessage = appendLog;
     game.start();
   }
 
   function restartGame() {
     hideAllOverlays();
-    showScreen('screen-title');
+    showScreen('screen-options');
+    _applyAISelection(_selectedAI); // keep last selection highlighted
     game = null;
   }
 
@@ -572,9 +649,21 @@ const UI = (() => {
 
   // ── Header ────────────────────────────────────────────────
   function renderHeader(state) {
-    document.getElementById('semester-badge').textContent = `Semester ${state.semester} of 8`;
-    const req = state.effortRequired || 0;
-    const rem = Math.max(0, state.effortRemaining ?? req);
+    // Semester progress dots
+    const prog = document.getElementById('semester-progress');
+    if (prog) {
+      prog.innerHTML = '';
+      for (let i = 1; i <= 8; i++) {
+        const dot = document.createElement('span');
+        dot.className = 'sem-dot' +
+          (i < state.semester ? ' done' : (i === state.semester ? ' current' : ''));
+        dot.title = `Semester ${i}`;
+        prog.appendChild(dot);
+      }
+    }
+
+    const req  = state.effortRequired || 0;
+    const rem  = Math.max(0, state.effortRemaining ?? req);
     const done = req - rem;
     const pct  = req > 0 ? Math.min(100, (done / req) * 100) : 0;
     document.getElementById('effort-track-fill').style.width = pct + '%';
@@ -744,11 +833,13 @@ const UI = (() => {
         (state.snitchChain && state.snitchChain.some(s => s.target === i || s.snitcher === i));
       const ecCount    = (state.extraCredits[i] || []).filter(e => e.type === 'extra_credit').length;
 
+      const isThinking = state.phase === PHASES.CARD_SELECTION && state.cardsPlayedThisSemester[i] === null && !state.expelled[i];
       div.innerHTML = `
         <div class="ai-info">
           <div class="player-header">
             <span class="player-name">${state.playerNames[i]}</span>
             ${state.projectLeaderIndex === i ? '<span class="pl-badge">PL</span>' : ''}
+            ${isThinking ? '<span class="ai-thinking">...</span>' : ''}
           </div>
           <div class="ai-card-count">Hand: ${handCount} &bull; Party: ${partyCount}</div>
           <div class="token-row" id="tokens-${i}"></div>
@@ -800,22 +891,49 @@ const UI = (() => {
       container.appendChild(el);
     }
 
-    // Badge on last face-down card during Day of Deadline
+    // Glow the final face-down card on Day of Deadline
     if (state.phase === PHASES.DAY_OF_DEADLINE && unrevealed === 1) {
       const faceDown = container.querySelectorAll('.face-down');
       const last = faceDown[faceDown.length - 1];
       if (last) {
         last.style.borderColor = 'var(--gold)';
         last.style.boxShadow = '0 0 0 3px rgba(241,196,15,0.4)';
-        const badge = document.createElement('span');
-        badge.style.cssText = 'position:absolute;bottom:2px;left:0;right:0;text-align:center;font-size:0.55rem;color:var(--gold-light);font-weight:800';
-        badge.textContent = 'FINAL CARD';
-        last.appendChild(badge);
+        const lbl = document.createElement('span');
+        lbl.style.cssText = 'position:absolute;bottom:2px;left:0;right:0;text-align:center;font-size:0.5rem;color:var(--gold-light);font-weight:800;letter-spacing:0.06em;text-shadow:0 1px 3px rgba(0,0,0,0.8)';
+        lbl.textContent = 'FINAL';
+        last.appendChild(lbl);
       }
+    }
+
+    // Running total below pile
+    if (state.effortPileRevealed.length > 0) {
+      const revCards = state.effortPileRevealed.map(e => e.card);
+      const runTotal = calculateEffortTotal(revCards, state.currentProject ? state.currentProject.condition : null);
+      const req      = state.effortRequired || 0;
+      const isDOD    = state.phase === PHASES.DAY_OF_DEADLINE || state.phase === PHASES.FINAL_REVEALED;
+      const cls      = isDOD ? (runTotal >= req ? 'pile-total passing' : 'pile-total failing') : 'pile-total';
+      const totalDiv = document.createElement('div');
+      totalDiv.className = cls;
+      totalDiv.textContent = isDOD
+        ? `${runTotal} / ${req} needed — ${runTotal >= req ? 'ON TRACK' : `short by ${req - runTotal}`}`
+        : `Running total: ${runTotal} / ${req}`;
+      container.parentElement.appendChild(totalDiv);
     }
   }
 
   // ── Action Bar ────────────────────────────────────────────
+  function setBanner(label, colour) {
+    let el = document.getElementById('phase-banner');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'phase-banner';
+      const bar = document.getElementById('action-bar');
+      bar.insertBefore(el, bar.firstChild);
+    }
+    el.className = `phase-banner phase-${colour}`;
+    el.textContent = label;
+  }
+
   function renderActionBar(state) {
     const msgEl  = document.getElementById('action-message');
     const btnsEl = document.getElementById('action-buttons');
@@ -829,6 +947,7 @@ const UI = (() => {
 
       case PHASES.SEMESTER_START:
       case PHASES.SPEECH:
+        setBanner('MOTIVATIONAL SPEECH', 'teal');
         msgEl.textContent = `${plName} is giving the Motivational Speech.`;
         if (isHumanPL) {
           addBtn(btnsEl, 'Give Speech & Continue', 'btn-primary', () => game.advanceToCardSelection());
@@ -838,6 +957,7 @@ const UI = (() => {
         break;
 
       case PHASES.CARD_SELECTION:
+        setBanner('CARD SELECTION', 'teal');
         if (!state.expelled[0] && state.cardsPlayedThisSemester[0] === null) {
           msgEl.textContent = 'Go to Your Hand tab. Tap effort card, then party pile card.';
           if (window.innerWidth < 768) {
@@ -849,6 +969,7 @@ const UI = (() => {
         break;
 
       case PHASES.REVEAL:
+        setBanner('REVEALING CARDS', 'teal');
         msgEl.textContent = `Auto-revealing cards... (${state.effortPileRevealed.length} / ${Math.max(0, state.effortPile.length - 1)} shown)`;
         if (window.innerWidth < 768) {
           addBtn(btnsEl, 'View Pile', 'btn-muted btn-small', () => switchTab('pile'));
@@ -856,6 +977,7 @@ const UI = (() => {
         break;
 
       case PHASES.DAY_OF_DEADLINE:
+        setBanner('DAY OF THE DEADLINE', 'gold');
         msgEl.textContent = `Day of the Deadline! One card face-down. Still need: ${Math.max(0, state.effortRemaining)}.`;
         if (isHumanPL) {
           addBtn(btnsEl, 'Let It Ride!', 'btn-success', () => game.letItRide());
@@ -869,6 +991,7 @@ const UI = (() => {
         break;
 
       case PHASES.SKILL_ANNOUNCING: {
+        setBanner('SKILL ACTIVATING', 'gold');
         const sk = state.activeSkillAnnounce;
         msgEl.textContent = sk
           ? `${plName} plays: ${sk.name}! — Resolving in a moment...`
@@ -877,10 +1000,12 @@ const UI = (() => {
       }
 
       case PHASES.BLAME_SPINNING:
+        setBanner('BLAME SPIN', 'red');
         msgEl.textContent = `${plName} is pointing the finger...`;
         break;
 
       case PHASES.FINAL_REVEALED: {
+        setBanner('FINAL REVEAL', 'gold');
         const tot = state.finalTotal ?? 0;
         const req = state.effortRequired;
         msgEl.innerHTML = `Final card revealed! Total: <strong>${tot}</strong> / ${req} — ${tot >= req ? 'Calculating PASS...' : 'Calculating FAIL...'}`;
@@ -892,6 +1017,7 @@ const UI = (() => {
 
       case PHASES.OUTCOME_PASS:
       case PHASES.NOMINATE:
+        setBanner('PROJECT PASSED', 'green');
         if (state.nominationPending && isHumanPL) {
           msgEl.textContent = 'Project PASSED! Nominate one player for Extra Credit.';
           openNominateModal(state);
@@ -901,10 +1027,12 @@ const UI = (() => {
         break;
 
       case PHASES.OUTCOME_FAIL:
+        setBanner('PROJECT FAILED', 'red');
         msgEl.textContent = 'Project FAILED. Starting blame vote...';
         break;
 
       case PHASES.SNITCH_REVEAL:
+        setBanner('SNITCH REVEAL', 'red');
         msgEl.textContent = 'Snitch in progress...';
         if (state.snitchReveal && !document.getElementById('modal-snitch-reveal').classList.contains('active')) {
           showSnitchReveal(state);
@@ -912,6 +1040,7 @@ const UI = (() => {
         break;
 
       case PHASES.BLAME_VOTE:
+        setBanner('BLAME VOTE', 'red');
         if (isHumanPL && state.accusedIndex === -1) {
           msgEl.textContent = 'You are Project Leader. Choose someone to accuse!';
           openAccuseModal(state);
@@ -930,10 +1059,12 @@ const UI = (() => {
         break;
 
       case PHASES.VOTE_RESULT:
+        setBanner('VOTE RESULT', 'red');
         msgEl.textContent = 'Vote resolved. Processing...';
         break;
 
       case PHASES.SNITCH:
+        setBanner('SNITCH PHASE', 'red');
         if (state.currentSnitchPlayer === 0) {
           openSnitchModal(state);
           msgEl.textContent = 'You may snitch! See the modal.';
@@ -943,36 +1074,43 @@ const UI = (() => {
         break;
 
       case PHASES.END_OF_SEMESTER:
+        setBanner('END OF SEMESTER', 'muted');
         msgEl.textContent = 'End of semester. Next one coming up...';
         break;
 
       case PHASES.SEMESTER_BREAK:
       case PHASES.BREAK_DRAW:
+        setBanner('SEMESTER BREAK', 'green');
         openBreakModal(state);
         msgEl.textContent = 'Semester Break! Draw your cards.';
         break;
 
       case 'SKILL_PERSONAL_RESP':
+        setBanner('SKILL — PERSONAL RESPONSIBILITY', 'gold');
         msgEl.textContent = 'Personal Responsibility: choose a card from your hand.';
         openPersonalRespModal(state);
         break;
 
       case 'SKILL_REALIGN':
+        setBanner('SKILL — REALIGN PRIORITIES', 'gold');
         msgEl.textContent = 'Realign Priorities: choose a player.';
         openRealignModal(state);
         break;
 
       case 'SKILL_EXTEND':
+        setBanner('SKILL — EXTEND THE DEADLINE', 'gold');
         msgEl.textContent = 'Extend the Deadline — processing...';
         game.processExtendDeadline();
         break;
 
       case 'SKILL_EXTEND_PLAY':
+        setBanner('SKILL — EXTEND THE DEADLINE', 'gold');
         msgEl.textContent = 'Extend the Deadline: tap a card to play face-up.';
         renderExtendPlayBtns(state, btnsEl);
         break;
 
       case 'SKILL_ACCOUNTABILITY':
+        setBanner('SKILL — ACCOUNTABILITY', 'gold');
         openAccountabilityModal(state);
         break;
 
@@ -1225,20 +1363,87 @@ const UI = (() => {
     showOverlay('modal-accuse');
   }
 
+  // Tracks semester 6 free-pick selections
+  let _freePick = [];
+
   function openBreakModal(state) {
     if (document.getElementById('modal-break').classList.contains('active')) return;
-    const taken   = state.takenBreakPairs[0];
-    const pairsEl = document.getElementById('modal-break-pairs');
-    pairsEl.innerHTML = '';
-    BREAK_PAIRS.forEach(pair => {
-      const already = !pair.canRepeat && taken.includes(pair.id);
-      const div = document.createElement('div');
-      div.className = 'vote-option' + (already ? ' disabled' : '');
-      div.innerHTML = `<span>${pair.label}${already ? ' (already taken)' : ''}</span>`;
-      if (!already) div.onclick = () => { game.humanDrawBreakPair(pair.id); hideOverlay('modal-break'); };
-      pairsEl.appendChild(div);
-    });
+
+    const pairsEl    = document.getElementById('modal-break-pairs');
+    const freePickEl = document.getElementById('modal-free-pick');
+
+    if (state.semester === 6) {
+      // ── Free pick: any two cards ──────────────────────────
+      document.getElementById('modal-break-desc').textContent =
+        'Final break — pick any two cards for your Year 4 projects!';
+      pairsEl.style.display = 'none';
+      freePickEl.style.display = 'block';
+      _freePick = [];
+      document.getElementById('free-pick-selected').textContent = 'Selected: none';
+      document.getElementById('free-pick-confirm').style.display = 'none';
+
+      const grid = document.getElementById('free-pick-grid');
+      grid.innerHTML = '';
+      const options = [0,1,2,3,4,5,6,7,8,'copy'];
+      options.forEach(v => {
+        const el = makeCardEl(
+          v === 'copy'
+            ? { typeId: 'copy', value: null, isCopy: true, uid: 'pick_' + v }
+            : { typeId: 'e' + v, value: v, isCopy: false, uid: 'pick_' + v },
+          'card card-sm'
+        );
+        el.style.cursor = 'pointer';
+        el.dataset.pickVal = v;
+        el.onclick = () => toggleFreePick(v, el);
+        grid.appendChild(el);
+      });
+
+    } else {
+      // ── Standard pair pick ────────────────────────────────
+      document.getElementById('modal-break-desc').textContent =
+        'Draw a pair summing to 8. You cannot take the same pair twice (except 4 + X2 Copy).';
+      pairsEl.style.display = '';
+      freePickEl.style.display = 'none';
+      pairsEl.innerHTML = '';
+      const taken = state.takenBreakPairs[0];
+      BREAK_PAIRS.forEach(pair => {
+        const already = !pair.canRepeat && taken.includes(pair.id);
+        const div = document.createElement('div');
+        div.className = 'vote-option' + (already ? ' disabled' : '');
+        div.innerHTML = `<span>${pair.label}${already ? ' (already taken)' : ''}</span>`;
+        if (!already) div.onclick = () => { game.humanDrawBreakPair(pair.id); hideOverlay('modal-break'); };
+        pairsEl.appendChild(div);
+      });
+    }
+
     showOverlay('modal-break');
+  }
+
+  function toggleFreePick(v, el) {
+    const idx = _freePick.indexOf(v);
+    if (idx !== -1) {
+      // Deselect
+      _freePick.splice(idx, 1);
+      el.classList.remove('selected');
+    } else {
+      if (_freePick.length >= 2) return; // already have 2
+      _freePick.push(v);
+      el.classList.add('selected');
+    }
+    const label = (x) => x === 'copy' ? 'X2 Copy' : String(x);
+    const selEl = document.getElementById('free-pick-selected');
+    selEl.textContent = _freePick.length === 0
+      ? 'Selected: none'
+      : 'Selected: ' + _freePick.map(label).join(' + ');
+    document.getElementById('free-pick-confirm').style.display =
+      _freePick.length === 2 ? '' : 'none';
+  }
+
+  function confirmFreePick() {
+    if (_freePick.length !== 2) return;
+    game.humanFreeBreakCards(_freePick[0], _freePick[1]);
+    hideOverlay('modal-break');
+    _freePick = [];
   }
 
   function openPersonalRespModal(state) {
@@ -1378,22 +1583,6 @@ const UI = (() => {
     img.onerror = () => { img.style.opacity = '0.2'; };
     div.appendChild(img);
 
-    const badge = document.createElement('span');
-    badge.className = 'effort-value-badge';
-    if (card.isCopy) {
-      badge.textContent = 'x2';
-      badge.style.background = 'var(--red)';
-      badge.style.color = 'var(--white)';
-    } else {
-      badge.textContent = card.value ?? '0';
-    }
-    div.appendChild(badge);
-
-    const label = document.createElement('span');
-    label.className = 'card-label';
-    label.textContent = card.isCopy ? 'X2 Copy' : (type ? type.label : String(card.value));
-    div.appendChild(label);
-
     return div;
   }
 
@@ -1428,7 +1617,8 @@ const UI = (() => {
   // Public stubs for HTML onclick attributes
   function passSnitch() { if (game) { game.humanPassSnitch(); hideOverlay('modal-snitch'); } }
 
-  return { startGame, restartGame, switchTab, passSnitch, toggleLog };
+  return { startGame, restartGame, switchTab, passSnitch, toggleLog, confirmFreePick,
+           openOptions, selectAI, backToTitle };
 })();
 </script>
 </body>

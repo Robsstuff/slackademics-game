@@ -264,16 +264,16 @@ class GameState {
   }
 }
 
-// ── AI Logic ────────────────────────────────────────────────
+// ── AI Personality Modes ─────────────────────────────────────
+// 'balanced' : mixed strategy — conditional-greedy / average / random / copy
+// 'random'   : pure random card selection for both piles
+// 'greedy'   : strongly plays low to effort, high to party (bottom/top thirds, not always extreme)
 
 /**
- * AI card selection — four equal 25% buckets:
- *   1. Greedy   — play the lowest card
- *   2. Average  — play the card closest to the per-player effort share
- *   3. Random   — play any card at random
- *   4. X2 Copy  — play an X2 Copy if one is in hand; otherwise random
+ * Choose which card to play to the effort pile.
+ * mode: 'balanced' | 'random' | 'greedy'
  */
-function aiChooseEffortCard(state, playerIndex) {
+function aiChooseEffortCard(state, playerIndex, mode) {
   const hand = state.hands[playerIndex];
   if (hand.length === 0) return null;
   if (hand.length === 1) return hand[0];
@@ -283,17 +283,46 @@ function aiChooseEffortCard(state, playerIndex) {
   const nonCopies = hand.filter(c => !c.isCopy);
   const copies    = hand.filter(c =>  c.isCopy);
 
+  // ── Random ───────────────────────────────────────────────────
+  if (mode === 'random') {
+    return hand[Math.floor(Math.random() * hand.length)];
+  }
+
+  // ── Greedy ───────────────────────────────────────────────────
+  // 70% pick from the bottom third; 20% average; 10% random
+  if (mode === 'greedy') {
+    const roll = Math.random();
+    if (roll < 0.70 && nonCopies.length > 0) {
+      const sorted = [...nonCopies].sort((a, b) => a.value - b.value);
+      const poolSize = Math.max(1, Math.ceil(sorted.length / 3));
+      return sorted[Math.floor(Math.random() * poolSize)];
+    }
+    if (roll < 0.90 && nonCopies.length > 0) {
+      return nonCopies.reduce((best, c) =>
+        Math.abs(c.value - avgNeeded) < Math.abs(best.value - avgNeeded) ? c : best);
+    }
+    return hand[Math.floor(Math.random() * hand.length)];
+  }
+
+  // ── Balanced (default) ───────────────────────────────────────
+  // Four equal 25% buckets: conditional-greedy / average / random / copy
   const roll = Math.random();
 
   if (roll < 0.25) {
-    // Greedy — lowest non-copy; fall back to any card
+    // Only sandbag if the group can still pass even with my minimum.
+    if (nonCopies.length > 0) {
+      const myMin = nonCopies.reduce((min, c) => c.value < min.value ? c : min);
+      const estimatedTotal = myMin.value + (activePlayers - 1) * avgNeeded;
+      if (estimatedTotal >= state.effortRequired) return myMin;
+    }
+    // Not safe to sandbag — fall through to average
     if (nonCopies.length > 0)
-      return nonCopies.reduce((min, c) => c.value < min.value ? c : min);
+      return nonCopies.reduce((best, c) =>
+        Math.abs(c.value - avgNeeded) < Math.abs(best.value - avgNeeded) ? c : best);
     return hand[Math.floor(Math.random() * hand.length)];
   }
 
   if (roll < 0.50) {
-    // Average — closest to per-player share
     if (nonCopies.length > 0)
       return nonCopies.reduce((best, c) =>
         Math.abs(c.value - avgNeeded) < Math.abs(best.value - avgNeeded) ? c : best);
@@ -301,24 +330,44 @@ function aiChooseEffortCard(state, playerIndex) {
   }
 
   if (roll < 0.75) {
-    // Random — any card
     return hand[Math.floor(Math.random() * hand.length)];
   }
 
-  // X2 Copy — play a copy if available; otherwise random
   if (copies.length > 0) return copies[0];
   return hand[Math.floor(Math.random() * hand.length)];
 }
 
-function aiChoosePartyCard(hand, effortCard) {
-  // Play the highest non-copy remaining card to party pile, or copy if nothing else
+/**
+ * Choose which card to play to the party pile.
+ * mode: 'balanced' | 'random' | 'greedy'
+ */
+function aiChoosePartyCard(hand, effortCard, mode) {
   const remaining = hand.filter(c => c.uid !== effortCard.uid);
   if (remaining.length === 0) return null;
   const nonCopies = remaining.filter(c => !c.isCopy);
-  if (nonCopies.length > 0) {
+
+  // ── Random ───────────────────────────────────────────────────
+  if (mode === 'random') {
+    return remaining[Math.floor(Math.random() * remaining.length)];
+  }
+
+  // ── Greedy ───────────────────────────────────────────────────
+  // 90% pick from the top third; 10% random
+  if (mode === 'greedy') {
+    if (nonCopies.length > 0 && Math.random() < 0.90) {
+      const sorted = [...nonCopies].sort((a, b) => b.value - a.value);
+      const poolSize = Math.max(1, Math.ceil(sorted.length / 3));
+      return sorted[Math.floor(Math.random() * poolSize)];
+    }
+    return remaining[Math.floor(Math.random() * remaining.length)];
+  }
+
+  // ── Balanced ─────────────────────────────────────────────────
+  // 70% highest non-copy; 30% any remaining card (adds unpredictability)
+  if (nonCopies.length > 0 && Math.random() < 0.70) {
     return nonCopies.reduce((best, c) => c.value > best.value ? c : best);
   }
-  return remaining[0];
+  return remaining[Math.floor(Math.random() * remaining.length)];
 }
 
 function aiChooseSkill(state) {
@@ -351,36 +400,27 @@ function aiChooseSkill(state) {
 }
 
 function aiBlamevote(state, voterIndex) {
-  // Vote for the player with the highest visible top party pile card
-  // (highest card = probably played lowest effort)
-  // Cannot vote for self, project leader, or accused
-  const pl = state.projectLeaderIndex;
+  // 65 % of the time vote on evidence: whoever (accused vs PL) has the higher party
+  // pile top card was probably partying harder and deserves the blame.
+  // 35 % of the time blind-vote for the accused regardless.
+  const pl      = state.projectLeaderIndex;
   const accused = state.accusedIndex;
-  const candidates = [0, 1, 2, 3].filter(
-    i => i !== voterIndex && i !== pl && i !== accused && !state.expelled[i]
-  );
 
-  if (candidates.length === 0) {
-    // Only choice: vote for accused
-    return 0; // blame accused
+  if (Math.random() < 0.65) {
+    // Evidence-based vote
+    const accusedPile = state.partyPiles[accused];
+    const leaderPile  = state.partyPiles[pl];
+    const av = accusedPile.length > 0
+      ? (accusedPile[accusedPile.length - 1].isCopy ? 0 : accusedPile[accusedPile.length - 1].value)
+      : 0;
+    const lv = leaderPile.length > 0
+      ? (leaderPile[leaderPile.length - 1].isCopy ? 0 : leaderPile[leaderPile.length - 1].value)
+      : 0;
+    // Vote for whoever has the higher party top card (= slacked more)
+    return av >= lv ? 0 : 1; // 0 = blame accused, 1 = blame leader
   }
 
-  // Check who has highest revealed party top card
-  let bestCandidate = null;
-  let bestVal = -1;
-  candidates.forEach(i => {
-    const pile = state.partyPiles[i];
-    if (pile.length > 0) {
-      const top = pile[pile.length - 1];
-      const v = top.isCopy ? 0 : top.value; // copies score 0 in party pile
-      if (v > bestVal) { bestVal = v; bestCandidate = i; }
-    }
-  });
-
-  // If accused has highest card, vote for accused (id=0); else vote for leader (id=1)
-  // (simple heuristic: mostly vote accused to pile on)
-  if (Math.random() < 0.65) return 0; // blame accused
-  return 1; // blame leader
+  return 0; // 35 % blind vote for accused
 }
 
 function aiShouldSnitch(state, playerIndex) {
@@ -422,10 +462,11 @@ function aiChooseSnitchTarget(state, snitcherIndex) {
 // ── Game Controller ─────────────────────────────────────────
 
 class Game {
-  constructor(onStateChange) {
+  constructor(onStateChange, aiMode) {
     this.state = new GameState();
     this.onStateChange = onStateChange || (() => {});
     this._pendingAiDelay = null;
+    this.aiMode = aiMode || 'balanced'; // 'balanced' | 'random' | 'greedy'
   }
 
   _change() {
@@ -696,10 +737,10 @@ class Game {
       if (s.expelled[i]) continue;
       if (s.cardsPlayedThisSemester[i] !== null) continue; // already chosen
 
-      const effortCard = aiChooseEffortCard(s, i);
+      const effortCard = aiChooseEffortCard(s, i, this.aiMode);
       if (!effortCard) continue;
 
-      const partyCard = aiChoosePartyCard(s.hands[i], effortCard);
+      const partyCard = aiChoosePartyCard(s.hands[i], effortCard, this.aiMode);
       if (!partyCard) continue;
 
       s.cardsPlayedThisSemester[i] = effortCard;
@@ -830,9 +871,9 @@ class Game {
         s.outcomeFlash = 'FAIL';
         s.phase = PHASES.OUTCOME_FAIL;
         this._change();
-        this._scheduleAI(1800);
+        this._scheduleAI(3000); // was 1800 — give flash time to fade before blame starts
       }
-    }, 2500);
+    }, 3500); // was 2500 — give player time to count the pile before outcome fires
   }
 
   useSkill(skill) {
@@ -854,7 +895,7 @@ class Game {
     setTimeout(() => {
       s.activeSkillAnnounce = null;
       this._executeSkillBody(skill);
-    }, 2000);
+    }, 2500);
   }
 
   // Separated from useSkill so the 2-second announce pause applies to every skill.
@@ -1006,9 +1047,9 @@ class Game {
         s.outcomeFlash = 'FAIL';
         s.phase = PHASES.OUTCOME_FAIL;
         this._change();
-        this._scheduleAI(1800);
+        this._scheduleAI(3000);
       }
-    }, 2500);
+    }, 3500);
   }
 
   // Accountability resolution
@@ -1199,7 +1240,7 @@ class Game {
     }
 
     this._change();
-    this._scheduleAI(800);
+    this._scheduleAI(1800); // was 800 — pause so player can read who got blamed
   }
 
   _giveFail(playerIndex) {
@@ -1372,7 +1413,7 @@ class Game {
       }, 1200);
     } else {
       this._scheduleAI(1000);
-      setTimeout(() => this.advanceToSemesterStart(), 1500);
+      setTimeout(() => this.advanceToSemesterStart(), 2500); // was 1500
     }
   }
 
@@ -1391,10 +1432,24 @@ class Game {
     const s = this.state;
     for (let i = 1; i < NUM_PLAYERS; i++) {
       if (s.expelled[i]) continue;
-      this._autoDrawBreakPair(i);
+      if (s.semester === 6) {
+        this._aiFreeBreakDraw(i);
+      } else {
+        this._autoDrawBreakPair(i);
+      }
     }
     // After AI draw, prompt human
     this._change();
+  }
+
+  // Semester 6 free pick — AI takes the two highest-value cards (7 + 8) to
+  // replenish their hand for the tough Year 4 projects.
+  _aiFreeBreakDraw(playerIndex) {
+    const s = this.state;
+    const uid = (v) => `${playerIndex}_free6_${v}_${Date.now()}_${Math.random()}`;
+    s.hands[playerIndex].push({ typeId: 'e7', value: 7, isCopy: false, uid: uid(7) });
+    s.hands[playerIndex].push({ typeId: 'e8', value: 8, isCopy: false, uid: uid(8) });
+    s.emit(`${s.playerNames[playerIndex]} takes 7 + 8 (free pick).`);
   }
 
   _autoDrawBreakPair(playerIndex) {
@@ -1456,6 +1511,26 @@ class Game {
     setTimeout(() => this.advanceToSemesterStart(), 1500);
   }
 
+  // Semester 6 free break — human picks any two cards (values 0–8 or copy)
+  humanFreeBreakCards(v1, v2) {
+    const s = this.state;
+    if (s.phase !== PHASES.SEMESTER_BREAK && s.phase !== PHASES.BREAK_DRAW) return;
+    if (s.semester !== 6) return;
+
+    const makeCard = (v, idx) => {
+      const uid = `0_free6_${v}_${idx}`;
+      if (v === 'copy') return { typeId: 'copy', value: null, isCopy: true, uid };
+      return { typeId: 'e' + v, value: v, isCopy: false, uid };
+    };
+    s.hands[0].push(makeCard(v1, 0));
+    s.hands[0].push(makeCard(v2, 1));
+    const label = (v) => v === 'copy' ? 'X2 Copy' : String(v);
+    s.emit(`You take ${label(v1)} + ${label(v2)} (free pick).`);
+    s.phase = PHASES.END_OF_SEMESTER;
+    this._change();
+    setTimeout(() => this.advanceToSemesterStart(), 1500);
+  }
+
   // ── Extend Deadline Flow ─────────────────────────────────
 
   processExtendDeadline() {
@@ -1492,7 +1567,7 @@ class Game {
         this._change();
         return;
       }
-      const card = aiChooseEffortCard(s, playerIdx);
+      const card = aiChooseEffortCard(s, playerIdx, this.aiMode);
       if (card) {
         s.hands[playerIdx] = s.hands[playerIdx].filter(c => c.uid !== card.uid);
         const entry = { card, playedBy: playerIdx };
@@ -1550,6 +1625,15 @@ class Game {
   endGame() {
     const s = this.state;
     s.phase = PHASES.GAME_OVER;
+
+    // Award responsible bonus to anyone who survived all 8 semesters without a single fail
+    [0,1,2,3].forEach(i => {
+      if (!s.expelled[i] && s.fails[i] === 0) {
+        s.extraCredits[i].push({ type: 'responsible', value: EXTRA_CREDIT_POINTS });
+        s.emit(`${s.playerNames[i]} earns a Clean Record bonus for graduating with zero fails!`);
+      }
+    });
+
     const scores = this._calcScores();
     s.finalScores = scores;
     s.emit('=== GAME OVER ===');
