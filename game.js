@@ -373,29 +373,47 @@ function aiChoosePartyCard(hand, effortCard, mode) {
 function aiChooseSkill(state) {
   if (state.skillsAvailable.length === 0) return null;
 
-  const pileTotal = calculateEffortTotal(state.effortPile, state.currentProject.condition);
-  const deficit = state.effortRemaining - pileTotal; // how short we are (can be negative)
+  // effortRemaining = effort still needed after all cards revealed so far (at Day of
+  // Deadline this means after the N-1 revealed cards; the last hidden card is unknown).
+  const deficit = state.effortRemaining;
 
-  // If already passing, don't use a skill
+  // Already passing — no skill needed
   if (deficit <= 0) return null;
 
-  // Prefer skill based on deficit size
+  // Peek at the last hidden card (last entry in effortPile that hasn't been revealed).
+  // The pile entries are { card, playedBy }; extract the card object correctly.
+  const lastEntry = state.effortPile[state.effortPile.length - 1];
+  if (lastEntry) {
+    const lastCard = lastEntry.card;
+    if (lastCard.isCopy) {
+      // X2 Copy doubles everything before it.  The running sum of revealed cards is
+      // (effortRequired - deficit), so the copy adds at least that much — very likely passes.
+      return null; // let it ride; copy almost certainly covers the gap
+    }
+    if (lastCard.value >= deficit) {
+      return null; // last card covers the remaining deficit exactly — let it ride
+    }
+  }
+
+  // Even without peeking, don't waste a skill when very little is needed.
+  if (deficit <= 2) return null;
+
+  // Deficit is real — pick the most appropriate skill.
   const skills = state.skillsAvailable;
   const byId = {};
   skills.forEach(s => { byId[s.id] = s; });
 
-  if (deficit <= 6 && byId['leave_group']) return byId['leave_group'];
-  if (deficit <= 6 && byId['curve_grade']) return byId['curve_grade'];
-  if (byId['pull_all_nighter']) return byId['pull_all_nighter'];
-  if (byId['round_of_coffee']) return byId['round_of_coffee'];
-  if (byId['diversity']) return byId['diversity'];
-  if (byId['match_vibe']) return byId['match_vibe'];
-  if (byId['good_reputation']) return byId['good_reputation'];
+  if (deficit <= 6 && byId['leave_group'])  return byId['leave_group'];
+  if (deficit <= 6 && byId['curve_grade'])  return byId['curve_grade'];
+  if (byId['pull_all_nighter'])             return byId['pull_all_nighter'];
+  if (byId['round_of_coffee'])              return byId['round_of_coffee'];
+  if (byId['diversity'])                    return byId['diversity'];
+  if (byId['match_vibe'])                   return byId['match_vibe'];
+  if (byId['good_reputation'])              return byId['good_reputation'];
   if (byId['plagiarize'] && state.currentProject.condition?.id !== 'plagiarism_detection') {
     return byId['plagiarize'];
   }
 
-  // Fallback: first available
   return skills[0];
 }
 
@@ -462,11 +480,14 @@ function aiChooseSnitchTarget(state, snitcherIndex) {
 // ── Game Controller ─────────────────────────────────────────
 
 class Game {
-  constructor(onStateChange, aiMode) {
+  constructor(onStateChange, aiModes) {
     this.state = new GameState();
     this.onStateChange = onStateChange || (() => {});
     this._pendingAiDelay = null;
-    this.aiMode = aiMode || 'balanced'; // 'balanced' | 'random' | 'greedy'
+    // aiModes: array of 3 modes for players 1, 2, 3 — 'balanced' | 'random' | 'greedy'
+    this.aiModes = Array.isArray(aiModes)
+      ? aiModes
+      : [aiModes || 'balanced', aiModes || 'balanced', aiModes || 'balanced'];
   }
 
   _change() {
@@ -737,10 +758,10 @@ class Game {
       if (s.expelled[i]) continue;
       if (s.cardsPlayedThisSemester[i] !== null) continue; // already chosen
 
-      const effortCard = aiChooseEffortCard(s, i, this.aiMode);
+      const effortCard = aiChooseEffortCard(s, i, this.aiModes[i - 1]);
       if (!effortCard) continue;
 
-      const partyCard = aiChoosePartyCard(s.hands[i], effortCard, this.aiMode);
+      const partyCard = aiChoosePartyCard(s.hands[i], effortCard, this.aiModes[i - 1]);
       if (!partyCard) continue;
 
       s.cardsPlayedThisSemester[i] = effortCard;
@@ -1567,7 +1588,7 @@ class Game {
         this._change();
         return;
       }
-      const card = aiChooseEffortCard(s, playerIdx, this.aiMode);
+      const card = aiChooseEffortCard(s, playerIdx, this.aiModes[playerIdx - 1]);
       if (card) {
         s.hands[playerIdx] = s.hands[playerIdx].filter(c => c.uid !== card.uid);
         const entry = { card, playedBy: playerIdx };

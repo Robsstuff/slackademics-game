@@ -27,41 +27,45 @@
 ═══════════════════════════════════════════════════════════ -->
 <div id="screen-options" class="screen">
   <h1>Game Options</h1>
-  <p class="tagline">Choose the AI personality for your three opponents.</p>
+  <p class="tagline">Assign an AI personality to each opponent.</p>
 
-  <div class="ai-option-grid">
-
-    <div class="ai-option-card" id="ai-opt-balanced" onclick="UI.selectAI('balanced')">
-      <div class="ai-opt-icon">&#9878;</div>
-      <div class="ai-opt-name">Balanced</div>
-      <div class="ai-opt-desc">
-        Mixes strategies each round &mdash; sometimes conservative, sometimes a slacker.
-        Plays high cards to the party pile most of the time, but occasionally surprises you.
-      </div>
-    </div>
-
-    <div class="ai-option-card" id="ai-opt-random" onclick="UI.selectAI('random')">
-      <div class="ai-opt-icon">&#127922;</div>
-      <div class="ai-opt-name">Random</div>
-      <div class="ai-opt-desc">
-        Picks every card completely at random &mdash; effort, party, all of it.
-        Chaotic and unpredictable. Great for a loose, wild game.
-      </div>
-    </div>
-
-    <div class="ai-option-card" id="ai-opt-greedy" onclick="UI.selectAI('greedy')">
-      <div class="ai-opt-icon">&#128176;</div>
-      <div class="ai-opt-name">Greedy</div>
-      <div class="ai-opt-desc">
-        Dumps low cards into assignments and hoards high cards for the party pile.
-        Calculated sandbagging &mdash; not always the absolute minimum, but close.
-      </div>
-    </div>
-
+  <!-- Legend -->
+  <div class="ai-legend">
+    <div class="ai-legend-item"><span class="ai-badge ai-badge-balanced">&#9878;</span><span><strong>Balanced</strong> &mdash; mixes strategies; occasionally surprises you</span></div>
+    <div class="ai-legend-item"><span class="ai-badge ai-badge-random">&#127922;</span><span><strong>Random</strong> &mdash; picks every card at random; pure chaos</span></div>
+    <div class="ai-legend-item"><span class="ai-badge ai-badge-greedy">&#128176;</span><span><strong>Greedy</strong> &mdash; plays low to effort, hoards high cards for partying</span></div>
   </div>
 
-  <button class="btn btn-primary" id="options-start-btn" onclick="UI.startGame()">Start Game</button>
-  <button class="btn btn-muted" style="margin-top:8px" onclick="UI.backToTitle()">Back</button>
+  <!-- Per-player rows -->
+  <div class="ai-player-table">
+    <div class="ai-player-row" id="ai-row-1">
+      <div class="ai-player-label">Alex</div>
+      <div class="ai-player-btns">
+        <button class="btn btn-ai selected" data-player="1" data-mode="balanced" onclick="UI.selectAI(1,'balanced')">&#9878; Balanced</button>
+        <button class="btn btn-ai"          data-player="1" data-mode="random"   onclick="UI.selectAI(1,'random')">&#127922; Random</button>
+        <button class="btn btn-ai"          data-player="1" data-mode="greedy"   onclick="UI.selectAI(1,'greedy')">&#128176; Greedy</button>
+      </div>
+    </div>
+    <div class="ai-player-row" id="ai-row-2">
+      <div class="ai-player-label">Billie</div>
+      <div class="ai-player-btns">
+        <button class="btn btn-ai selected" data-player="2" data-mode="balanced" onclick="UI.selectAI(2,'balanced')">&#9878; Balanced</button>
+        <button class="btn btn-ai"          data-player="2" data-mode="random"   onclick="UI.selectAI(2,'random')">&#127922; Random</button>
+        <button class="btn btn-ai"          data-player="2" data-mode="greedy"   onclick="UI.selectAI(2,'greedy')">&#128176; Greedy</button>
+      </div>
+    </div>
+    <div class="ai-player-row" id="ai-row-3">
+      <div class="ai-player-label">Casey</div>
+      <div class="ai-player-btns">
+        <button class="btn btn-ai selected" data-player="3" data-mode="balanced" onclick="UI.selectAI(3,'balanced')">&#9878; Balanced</button>
+        <button class="btn btn-ai"          data-player="3" data-mode="random"   onclick="UI.selectAI(3,'random')">&#127922; Random</button>
+        <button class="btn btn-ai"          data-player="3" data-mode="greedy"   onclick="UI.selectAI(3,'greedy')">&#128176; Greedy</button>
+      </div>
+    </div>
+  </div>
+
+  <button class="btn btn-primary" onclick="UI.startGame()">Start Game</button>
+  <button class="btn btn-muted"   style="margin-top:8px" onclick="UI.backToTitle()">Back</button>
 </div>
 
 <!-- ══════════════════════════════════════════════════════════
@@ -570,23 +574,28 @@ const UI = (() => {
   }
 
   // ── Options / Start / Restart ─────────────────────────────
-  let _selectedAI = 'balanced';
+  // Per-player AI modes: index 0 = Alex (player 1), 1 = Billie, 2 = Casey
+  let _aiModes = ['balanced', 'balanced', 'balanced'];
 
   function openOptions() {
-    _selectedAI = 'balanced';
-    _applyAISelection('balanced');
+    _aiModes = ['balanced', 'balanced', 'balanced'];
+    _applyAllSelections();
     showScreen('screen-options');
   }
 
-  function selectAI(mode) {
-    _selectedAI = mode;
-    _applyAISelection(mode);
+  function selectAI(playerNum, mode) {
+    _aiModes[playerNum - 1] = mode;
+    // Update button states for that player's row
+    document.querySelectorAll(`[data-player="${playerNum}"]`).forEach(btn => {
+      btn.classList.toggle('selected', btn.dataset.mode === mode);
+    });
   }
 
-  function _applyAISelection(mode) {
-    ['balanced','random','greedy'].forEach(m => {
-      const el = document.getElementById('ai-opt-' + m);
-      if (el) el.classList.toggle('selected', m === mode);
+  function _applyAllSelections() {
+    [1, 2, 3].forEach(p => {
+      document.querySelectorAll(`[data-player="${p}"]`).forEach(btn => {
+        btn.classList.toggle('selected', btn.dataset.mode === _aiModes[p - 1]);
+      });
     });
   }
 
@@ -600,7 +609,7 @@ const UI = (() => {
     _blameSpinShown = false;
     showScreen('screen-game');
     switchTab('project');
-    game = new Game(renderState, _selectedAI);
+    game = new Game(renderState, [..._aiModes]);
     window.onLogMessage = appendLog;
     game.start();
   }
@@ -608,7 +617,7 @@ const UI = (() => {
   function restartGame() {
     hideAllOverlays();
     showScreen('screen-options');
-    _applyAISelection(_selectedAI); // keep last selection highlighted
+    _applyAllSelections(); // restore last selections
     game = null;
   }
 
