@@ -374,12 +374,16 @@ const UI = (() => {
     const el   = document.getElementById('fail-flash');
     const name = document.getElementById('fail-flash-name');
     el.style.display = 'flex';
-    name.textContent = `${game.state.playerNames[ff.playerIndex]} — Fail ${ff.count}/3${ff.count >= 3 ? ' — EXPELLED!' : ''}`;
+    if (ff.isGroupFail) {
+      name.textContent = `GROUP FAIL — Exam failed! Everyone receives a group fail (${ff.groupFails} total).`;
+    } else {
+      name.textContent = `${game.state.playerNames[ff.playerIndex]} — Personal Fail (${ff.count}/${MAX_FAILS} total)${ff.count >= MAX_FAILS ? ' — EXPELLED!' : ''}`;
+    }
     el.style.animation = '';
-    void el.offsetWidth; // reflow
+    void el.offsetWidth;
     el.style.animation = 'flashIn 0.25s ease forwards';
     clearTimeout(el._hideTimer);
-    el._hideTimer = setTimeout(() => { el.style.display = 'none'; }, 2200);
+    el._hideTimer = setTimeout(() => { el.style.display = 'none'; }, 2800);
   }
 
   // ── Snitch Reveal Popup ───────────────────────────────────
@@ -540,7 +544,7 @@ const UI = (() => {
       el.innerHTML = `
         <div class="blame-player-name">${state.playerNames[pi]}</div>
         ${isPL ? '<div class="blame-pl-tag">PL</div>' : ''}
-        <div class="blame-fail-row">${buildFailDots(state.fails[pi])}</div>`;
+        <div class="blame-fail-row">${buildFailDots((state.groupFails || 0) + (state.fails[pi] || 0))}</div>`;
     }
 
     document.getElementById('blame-header').textContent =
@@ -749,12 +753,29 @@ const UI = (() => {
     const humanFailEl = document.getElementById('human-fail-dots');
     if (humanFailEl) {
       humanFailEl.innerHTML = '';
+      const totalFails = (state.groupFails || 0) + state.fails[0];
+      // Show group fails (dimmer) then personal fails (bright)
+      for (let f = 0; f < state.groupFails; f++) {
+        const fimg = document.createElement('img');
+        fimg.src = 'assets/other/Fail.jpg';
+        fimg.alt = 'Group Fail';
+        fimg.title = 'Group Fail';
+        fimg.style.cssText = 'width:28px;height:40px;object-fit:cover;border-radius:3px;opacity:0.55;box-shadow:0 1px 4px rgba(0,0,0,0.4)';
+        humanFailEl.appendChild(fimg);
+      }
       for (let f = 0; f < state.fails[0]; f++) {
         const fimg = document.createElement('img');
         fimg.src = 'assets/other/Fail.jpg';
-        fimg.alt = 'Fail';
+        fimg.alt = 'Personal Fail';
+        fimg.title = 'Personal Fail';
         fimg.style.cssText = 'width:32px;height:45px;object-fit:cover;border-radius:3px;box-shadow:0 1px 4px rgba(0,0,0,0.5)';
         humanFailEl.appendChild(fimg);
+      }
+      if (totalFails > 0) {
+        const label = document.createElement('span');
+        label.style.cssText = 'font-size:0.7rem;color:var(--red-light);align-self:center;margin-left:4px';
+        label.textContent = `${totalFails}/${MAX_FAILS}`;
+        humanFailEl.appendChild(label);
       }
     }
 
@@ -855,13 +876,32 @@ const UI = (() => {
         </div>`;
 
       const tokensEl = div.querySelector(`#tokens-${i}`);
-      // Fail cards
-      for (let f = 0; f < state.fails[i]; f++) {
+      // Fail cards — group fails (dimmer) then personal fails (full)
+      const groupFails = state.groupFails || 0;
+      const personalFails = state.fails[i] || 0;
+      const totalFailsAI = groupFails + personalFails;
+      for (let f = 0; f < groupFails; f++) {
         const img = document.createElement('img');
         img.src = 'assets/other/Fail.jpg';
         img.className = 'token-card';
-        img.title = 'Fail';
+        img.title = 'Group Fail';
+        img.style.opacity = '0.55';
+        img.style.width = '28px';
+        img.style.height = '40px';
         tokensEl.appendChild(img);
+      }
+      for (let f = 0; f < personalFails; f++) {
+        const img = document.createElement('img');
+        img.src = 'assets/other/Fail.jpg';
+        img.className = 'token-card';
+        img.title = 'Personal Fail';
+        tokensEl.appendChild(img);
+      }
+      if (totalFailsAI > 0) {
+        const lbl = document.createElement('span');
+        lbl.textContent = `${totalFailsAI}/5`;
+        lbl.style.cssText = 'font-size:10px;color:#e74c3c;font-weight:700;align-self:center;margin-left:2px;';
+        tokensEl.appendChild(lbl);
       }
       // Extra credit cards
       for (let e = 0; e < ecCount; e++) {
@@ -1600,7 +1640,7 @@ const UI = (() => {
     const el = document.getElementById(id);
     if (!el) return;
     el.innerHTML = '';
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 5; i++) {
       const dot = document.createElement('span');
       dot.className = 'fail-dot' + (i < count ? ' filled' : '');
       el.appendChild(dot);
@@ -1609,7 +1649,7 @@ const UI = (() => {
 
   function buildFailDots(count) {
     let h = '';
-    for (let i = 0; i < 3; i++) h += `<span class="fail-dot${i<count?' filled':''}"></span>`;
+    for (let i = 0; i < 5; i++) h += `<span class="fail-dot${i<count?' filled':''}"></span>`;
     return h;
   }
 

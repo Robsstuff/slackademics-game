@@ -31,7 +31,7 @@ const PHASES = {
 
 const NUM_PLAYERS = 4;
 const NUM_SEMESTERS = 8;
-const MAX_FAILS = 3;
+const MAX_FAILS = 5;        // total fails (group + personal) before expulsion
 const EXTRA_CREDIT_POINTS = 3;
 
 // ── Utility ─────────────────────────────────────────────────
@@ -210,7 +210,9 @@ class GameState {
     this.playerNames = ['You', ...AI_NAMES];
     this.hands = [[], [], [], []];
     this.partyPiles = [[], [], [], []]; // top = last element
-    this.fails = [0, 0, 0, 0];
+    this.fails = [0, 0, 0, 0];         // personal fails per player (blame / snitch success)
+    this.groupFails = 0;               // shared fail count — increments when any exam fails
+    this.completedExams = [];          // { project, passed } — for expansion scoring
     this.extraCredits = [[], [], [], []];
     this.expelled = [false, false, false, false];
     this.takenBreakPairs = [[], [], [], []]; // pair ids taken per player
@@ -457,8 +459,11 @@ function aiShouldSnitch(state, playerIndex) {
     return sum + (top.isCopy ? 0 : top.value);
   }, 0) / others.length;
 
-  // Snitch if my card is below average (likely to succeed)
-  return myVal < avgOther;
+  // More aggressive snitching:
+  //   always snitch when clearly favoured, frequently when even, occasionally as a bluff
+  if (myVal < avgOther)             return true;              // strictly favoured
+  if (myVal <= Math.floor(avgOther) + 1) return Math.random() < 0.65; // roughly even → 65 %
+  return Math.random() < 0.30;                                // unfavoured bluff → 30 %
 }
 
 function aiChooseSnitchTarget(state, snitcherIndex) {
@@ -882,7 +887,8 @@ class Game {
 
     setTimeout(() => {
       if (total >= s.effortRequired) {
-        s.emit('Project PASSED!');
+        s.emit('Project PASSED! The exam card is placed face-up on the effort track.');
+        s.completedExams.push({ project: s.currentProject, passed: true });
         s.outcomeFlash = 'PASS';
         s.phase = PHASES.OUTCOME_PASS;
         this._change();
@@ -892,9 +898,9 @@ class Game {
         s.outcomeFlash = 'FAIL';
         s.phase = PHASES.OUTCOME_FAIL;
         this._change();
-        this._scheduleAI(3000); // was 1800 — give flash time to fade before blame starts
+        this._scheduleAI(3000);
       }
-    }, 3500); // was 2500 — give player time to count the pile before outcome fires
+    }, 3500);
   }
 
   useSkill(skill) {
@@ -1058,7 +1064,8 @@ class Game {
 
     setTimeout(() => {
       if (total >= s.effortRequired) {
-        s.emit(`Project PASSED via ${skill.name}!`);
+        s.emit(`Project PASSED via ${skill.name}! The exam card is placed face-up on the effort track.`);
+        s.completedExams.push({ project: s.currentProject, passed: true });
         s.outcomeFlash = 'PASS';
         s.phase = PHASES.OUTCOME_PASS;
         this._change();
@@ -1264,16 +1271,43 @@ class Game {
     this._scheduleAI(1800); // was 800 — pause so player can read who got blamed
   }
 
+  // Returns total fails (group + personal) for a player.
+  _totalFails(playerIndex) {
+    return this.state.groupFails + this.state.fails[playerIndex];
+  }
+
+  // Group fail — exam failed; every active player gets +1 toward expulsion.
+  // Does NOT trigger party-pile discard (only personal fails do that).
+  _giveGroupFail() {
+    const s = this.state;
+    s.groupFails++;
+    s.completedExams.push({ project: s.currentProject, passed: false });
+    s.emit(`Group Fail! The exam is placed face-down on the effort track. Everyone now has ${s.groupFails} group fail${s.groupFails > 1 ? 's' : ''}.`);
+    s.failFlash = { playerIndex: -1, isGroupFail: true, groupFails: s.groupFails, ts: Date.now() };
+    // Check all active players for expulsion
+    [0,1,2,3].forEach(i => {
+      if (s.expelled[i]) return;
+      if (this._totalFails(i) >= MAX_FAILS) {
+        s.expelled[i] = true;
+        s.emit(`${s.playerNames[i]} has reached ${MAX_FAILS} total fails — EXPELLED!`);
+        s.hands[i] = [];
+      }
+    });
+  }
+
+  // Personal fail — from blame vote or successful snitch.
+  // Triggers party-pile discard at end of semester.
   _giveFail(playerIndex) {
     const s = this.state;
     s.fails[playerIndex]++;
-    s.failFlash = { playerIndex, count: s.fails[playerIndex], ts: Date.now() };
+    const total = this._totalFails(playerIndex);
+    s.failFlash = { playerIndex, count: total, ts: Date.now() };
     if (!s.playersWhoTookFailThisSemester.includes(playerIndex)) {
       s.playersWhoTookFailThisSemester.push(playerIndex);
     }
-    s.emit(`${s.playerNames[playerIndex]} receives a Fail! (${s.fails[playerIndex]}/${MAX_FAILS})`);
+    s.emit(`${s.playerNames[playerIndex]} receives a personal Fail! (${total}/${MAX_FAILS} total)`);
 
-    if (s.fails[playerIndex] >= MAX_FAILS) {
+    if (total >= MAX_FAILS) {
       s.expelled[playerIndex] = true;
       s.emit(`${s.playerNames[playerIndex]} is EXPELLED!`);
       s.hands[playerIndex] = [];
@@ -1393,8 +1427,13 @@ class Game {
         this.endSemester();
       }
     } else {
-      s.emit(`Snitch FAILED! ${s.playerNames[snitcherIndex]} takes an extra Fail.`);
-      this._giveFail(snitcherIndex);
+      // Wrong snitch — discard a party card as penalty (no fail taken)
+      if (s.partyPiles[snitcherIndex].length > 0) {
+        const discarded = s.partyPiles[snitcherIndex].pop();
+        s.emit(`Snitch FAILED! ${s.playerNames[snitcherIndex]} discards a party card (${discarded.isCopy ? 'X2 Copy' : discarded.value}) as the penalty.`);
+      } else {
+        s.emit(`Snitch FAILED! ${s.playerNames[snitcherIndex]} has no party card to discard — no penalty applied.`);
+      }
       s.snitchChain.push({ snitcher: snitcherIndex, target: targetIndex, result: 'fail' });
       s.snitchActive = false;
       this.endSemester();
@@ -1610,7 +1649,8 @@ class Game {
 
     if (total >= s.effortRequired) {
       s.phase = PHASES.OUTCOME_PASS;
-      s.emit('Project PASSED via Extend the Deadline!');
+      s.emit('Project PASSED via Extend the Deadline! The exam card is placed face-up on the effort track.');
+      s.completedExams.push({ project: s.currentProject, passed: true });
       this._grantPassExtraCredit(false);
     } else {
       s.phase = PHASES.OUTCOME_FAIL;
@@ -1636,8 +1676,10 @@ class Game {
 
   // ── Outcome Fail → Blame ─────────────────────────────────
 
-  // Called by AI tick when phase is OUTCOME_FAIL
+  // Called by AI tick when phase is OUTCOME_FAIL.
+  // Issues the group fail first, then starts the blame vote.
   _handleOutcomeFail() {
+    this._giveGroupFail();
     this._startBlameVote();
   }
 
