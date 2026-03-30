@@ -668,7 +668,7 @@ class Game {
         break;
 
       case PHASES.OUTCOME_FAIL:
-        this._startBlameVote();
+        this._handleOutcomeFail();
         break;
 
       case PHASES.VOTE_RESULT:
