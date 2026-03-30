@@ -850,8 +850,13 @@ class Game {
       s.effortPileRevealed.push(entry);
       const v = entry.card.isCopy ? 'X2 Copy' : entry.card.value;
       s.emit(`Revealed: ${v}`);
-      // Update effort remaining (approximate — final calc after all revealed)
-      const revealedCards = s.effortPileRevealed.map(e => e.card);
+      // Update effort remaining — exclude a trailing X2 if more cards remain,
+      // since X2 is a pending multiplier for the NEXT card, not a +7 yet.
+      let revealedCards = s.effortPileRevealed.map(e => e.card);
+      const stillUnrevealed = s.effortPile.length - s.effortPileRevealed.length;
+      if (stillUnrevealed > 0 && revealedCards.length > 0 && revealedCards[revealedCards.length - 1].isCopy) {
+        revealedCards = revealedCards.slice(0, -1);
+      }
       s.effortRemaining = s.effortRequired - calculateEffortTotal(revealedCards, s.currentProject.condition);
       this._change();
     } else {

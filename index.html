@@ -126,13 +126,6 @@
         <label>Effort Pile (revealed cards):</label>
         <div id="effort-pile-cards"></div>
       </div>
-      <div id="effort-track-wrap">
-        <div id="effort-track-bar"><div id="effort-track-fill" style="width:0%"></div></div>
-        <div id="effort-track-labels">
-          <span id="effort-numbers">0 / 0</span>
-          <span id="effort-needed-label">needed to pass</span>
-        </div>
-      </div>
     </div>
 
     <!-- SKILLS PANE: leadership skills -->
@@ -147,6 +140,15 @@
   <div id="action-bar">
     <div id="action-message">Waiting...</div>
     <div id="action-buttons"></div>
+  </div>
+
+  <!-- Effort Track (always visible, above log) -->
+  <div id="effort-track-wrap">
+    <div id="effort-track-bar"><div id="effort-track-fill" style="width:0%"></div></div>
+    <div id="effort-track-labels">
+      <span id="effort-numbers">0 / 0</span>
+      <span id="effort-needed-label">needed to pass</span>
+    </div>
   </div>
 
   <!-- Game Log Panel -->
@@ -486,7 +488,7 @@ const UI = (() => {
     const btn  = document.getElementById('log-toggle-btn');
     if (!list) return;
     list.className = _logOpen ? 'log-open' : 'log-hidden';
-    if (_logOpen) list.scrollTop = list.scrollHeight;
+    if (_logOpen) list.scrollTop = 0;
     if (btn) btn.classList.toggle('log-open', _logOpen);
   }
 
