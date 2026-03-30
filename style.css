@@ -556,8 +556,20 @@ html, body {
   transition: all 0.3s;
 }
 .sem-dot.done    { background: var(--muted); border-color: var(--muted); }
+.sem-dot.passed  { background: #27ae60; border-color: #27ae60; }
+.sem-dot.failed  { background: #e74c3c; border-color: #e74c3c; }
 .sem-dot.current { background: transparent; border-color: var(--gold-light);
   box-shadow: 0 0 0 2px rgba(241,196,15,0.3); width: 10px; height: 10px; }
+
+.group-fails-counter {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-left: 6px;
+}
+.group-fails-counter.danger { color: #e74c3c; }
 
 /* ── AI thinking blink ────────────────────────────────────── */
 .ai-thinking {

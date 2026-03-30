@@ -668,11 +668,27 @@ const UI = (() => {
       prog.innerHTML = '';
       for (let i = 1; i <= 8; i++) {
         const dot = document.createElement('span');
-        dot.className = 'sem-dot' +
-          (i < state.semester ? ' done' : (i === state.semester ? ' current' : ''));
-        dot.title = `Semester ${i}`;
+        const exam = (state.completedExams || [])[i - 1];
+        let cls = 'sem-dot';
+        if (i < state.semester) {
+          cls += exam ? (exam.passed ? ' passed' : ' failed') : ' done';
+        } else if (i === state.semester) {
+          cls += ' current';
+        }
+        dot.className = cls;
+        dot.title = `Semester ${i}${exam ? (exam.passed ? ' — Passed' : ' — Failed') : ''}`;
         prog.appendChild(dot);
       }
+      // Group fails counter
+      let gfEl = document.getElementById('group-fails-counter');
+      if (!gfEl) {
+        gfEl = document.createElement('span');
+        gfEl.id = 'group-fails-counter';
+        prog.after(gfEl);
+      }
+      const gf = state.groupFails || 0;
+      gfEl.textContent = `Group Fails: ${gf}/8`;
+      gfEl.className = 'group-fails-counter' + (gf >= 3 ? ' danger' : '');
     }
 
     const req  = state.effortRequired || 0;
