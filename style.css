@@ -1189,6 +1189,48 @@ html, body {
 }
 
 /* ══════════════════════════════════════════════════════════
+   MODE SELECTION SCREEN
+══════════════════════════════════════════════════════════ */
+.mode-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 480px;
+  margin: 20px auto 0;
+}
+@media (min-width: 600px) {
+  .mode-cards { flex-direction: row; }
+}
+.mode-card {
+  flex: 1;
+  background: var(--navy-mid);
+  border: 2px solid var(--navy-light);
+  border-radius: 12px;
+  padding: 20px 16px;
+  cursor: pointer;
+  transition: border-color 0.18s, background 0.18s, transform 0.12s;
+  text-align: center;
+}
+.mode-card:hover { border-color: var(--gold); transform: translateY(-2px); }
+.mode-card.selected {
+  border-color: var(--gold);
+  background: rgba(243,156,18,0.12);
+}
+.mode-card-title {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--gold-light);
+  margin-bottom: 8px;
+  letter-spacing: 0.04em;
+}
+.mode-card-desc {
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* ══════════════════════════════════════════════════════════
    SCROLLBAR (desktop)
 ══════════════════════════════════════════════════════════ */
 ::-webkit-scrollbar       { width: 5px; height: 5px; }

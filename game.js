@@ -482,11 +482,40 @@ function aiChooseSnitchTarget(state, snitcherIndex) {
   return best;
 }
 
+// ── Balanced Mode Helpers ────────────────────────────────────
+
+// Returns the complementary card (partner that sums to 8) from hand.
+function getBalancedPartner(effortCard, hand) {
+  if (effortCard.isCopy) {
+    return hand.find(c => c.isCopy && c.uid !== effortCard.uid) || null;
+  }
+  const partnerValue = 8 - effortCard.value;
+  return hand.find(c => !c.isCopy && c.value === partnerValue && c.uid !== effortCard.uid) || null;
+}
+
+// Party pile scoring for balanced mode:
+// X2 copy doubles the NEXT card (stacks if multiple X2s in a row).
+// A trailing X2 with nothing after it contributes 0.
+function scoreBalancedPartyPile(pile) {
+  let total = 0;
+  let multiplier = 1;
+  for (const card of pile) {
+    if (card.isCopy) {
+      multiplier *= 2;
+    } else {
+      total += card.value * multiplier;
+      multiplier = 1;
+    }
+  }
+  return total; // any trailing X2s contribute 0 (multiplier not applied)
+}
+
 // ── Game Controller ─────────────────────────────────────────
 
 class Game {
-  constructor(onStateChange, aiModes) {
+  constructor(onStateChange, aiModes, balancedMode = false) {
     this.state = new GameState();
+    this.state.balancedMode = balancedMode;
     this.onStateChange = onStateChange || (() => {});
     this._pendingAiDelay = null;
     // aiModes: array of 3 modes for players 1, 2, 3 — 'balanced' | 'random' | 'greedy'
@@ -501,6 +530,7 @@ class Game {
 
   // Build and shuffle the project deck
   _buildProjectDeck() {
+    if (this.state.balancedMode) return [...BALANCED_PROJECTS];
     const chosen = PROJECT_PAIRS.map(([a, b]) => {
       return Math.random() < 0.5 ? PROJECTS[a] : PROJECTS[b];
     });
@@ -508,7 +538,11 @@ class Game {
   }
 
   _buildSkillDeck() {
-    return shuffle([...LEADERSHIP_SKILLS]);
+    const BALANCED_EXCLUDED = new Set(['leave_group', 'accountability']);
+    const pool = this.state.balancedMode
+      ? LEADERSHIP_SKILLS.filter(s => !BALANCED_EXCLUDED.has(s.id))
+      : LEADERSHIP_SKILLS;
+    return shuffle([...pool]);
   }
 
   _drawSkills(state) {
@@ -533,7 +567,7 @@ class Game {
 
     // Deal hands
     for (let i = 0; i < NUM_PLAYERS; i++) {
-      s.hands[i] = makeStartingHand(i);
+      s.hands[i] = s.balancedMode ? makeBalancedHand(i) : makeStartingHand(i);
       s.partyPiles[i] = [];
       s.fails[i] = 0;
       s.extraCredits[i] = [];
@@ -594,6 +628,15 @@ class Game {
     s.accusedIndex = -1;
     s.votes = [-1, -1, -1, -1];
     s.outcomeFlash = null;
+
+    // Balanced mode: reset every player's hand to the fixed balanced hand each semester
+    if (s.balancedMode) {
+      for (let i = 0; i < NUM_PLAYERS; i++) {
+        if (!s.expelled[i]) {
+          s.hands[i] = makeBalancedHand(i, `_s${s.semester}`);
+        }
+      }
+    }
 
     s.phase = PHASES.SEMESTER_START;
     s.emit(`Semester ${s.semester}: ${s.currentProject.code} — ${s.currentProject.title}. Effort required: ${s.effortRequired}.`);
@@ -766,7 +809,12 @@ class Game {
       const effortCard = aiChooseEffortCard(s, i, this.aiModes[i - 1]);
       if (!effortCard) continue;
 
-      const partyCard = aiChoosePartyCard(s.hands[i], effortCard, this.aiModes[i - 1]);
+      let partyCard;
+      if (s.balancedMode) {
+        partyCard = getBalancedPartner(effortCard, s.hands[i]);
+      } else {
+        partyCard = aiChoosePartyCard(s.hands[i], effortCard, this.aiModes[i - 1]);
+      }
       if (!partyCard) continue;
 
       s.cardsPlayedThisSemester[i] = effortCard;
@@ -1497,7 +1545,9 @@ class Game {
     const s = this.state;
     for (let i = 1; i < NUM_PLAYERS; i++) {
       if (s.expelled[i]) continue;
-      if (s.semester === 6) {
+      if (s.balancedMode) {
+        this._autoDrawBreakPair(i); // balanced mode: always pairs, no free pick
+      } else if (s.semester === 6) {
         this._aiFreeBreakDraw(i);
       } else {
         this._autoDrawBreakPair(i);
@@ -1520,56 +1570,60 @@ class Game {
   _autoDrawBreakPair(playerIndex) {
     const s = this.state;
     const taken = s.takenBreakPairs[playerIndex];
+    const pairs = s.balancedMode ? BALANCED_BREAK_PAIRS : BREAK_PAIRS;
 
     // Find eligible pairs
-    const eligible = BREAK_PAIRS.filter(p => {
+    const eligible = pairs.filter(p => {
       if (p.canRepeat) return true;
       return !taken.includes(p.id);
     });
 
     if (eligible.length === 0) {
-      // Default to 4 + copy
-      const fallback = BREAK_PAIRS.find(p => p.id === 'pair_4_c');
-      this._drawPair(playerIndex, fallback);
+      // All pairs taken — pick a random one to repeat
+      const pick = pairs[Math.floor(Math.random() * pairs.length)];
+      this._drawPair(playerIndex, pick, s.balancedMode);
       return;
     }
 
-    // AI preference: avoid pairs already taken, prefer mid-range
+    // Prefer mid-range pairs for AI
     const pick = eligible[Math.floor(Math.random() * eligible.length)];
-    this._drawPair(playerIndex, pick);
+    this._drawPair(playerIndex, pick, s.balancedMode);
   }
 
-  _drawPair(playerIndex, pair) {
+  _drawPair(playerIndex, pair, toPartyPile = false) {
     const s = this.state;
     s.takenBreakPairs[playerIndex].push(pair.id);
+    const dest = toPartyPile ? s.partyPiles[playerIndex] : s.hands[playerIndex];
 
-    pair.cards.forEach(v => {
-      const uid = `${playerIndex}_break_${s.semester}_${v}`;
+    pair.cards.forEach((v, i) => {
+      const uid = `${playerIndex}_break_${s.semester}_${v}_${i}`;
       if (v === 'copy') {
-        s.hands[playerIndex].push({ typeId: 'copy', value: null, isCopy: true, uid });
+        dest.push({ typeId: 'copy', value: null, isCopy: true, uid });
       } else {
-        s.hands[playerIndex].push({ typeId: 'e' + v, value: v, isCopy: false, uid });
+        dest.push({ typeId: 'e' + v, value: v, isCopy: false, uid });
       }
     });
 
-    s.emit(`${s.playerNames[playerIndex]} draws ${pair.label}.`);
+    const dest_label = toPartyPile ? 'party pile' : 'hand';
+    s.emit(`${s.playerNames[playerIndex]} draws ${pair.label} to their ${dest_label}.`);
   }
 
   humanDrawBreakPair(pairId) {
     const s = this.state;
     if (s.phase !== PHASES.SEMESTER_BREAK && s.phase !== PHASES.BREAK_DRAW) return;
 
-    const pair = BREAK_PAIRS.find(p => p.id === pairId);
+    const pairs = s.balancedMode ? BALANCED_BREAK_PAIRS : BREAK_PAIRS;
+    const pair = pairs.find(p => p.id === pairId);
     if (!pair) return;
 
     const taken = s.takenBreakPairs[0];
     if (!pair.canRepeat && taken.includes(pair.id)) {
-      s.emit('You have already taken that pair. Choose another, or take 4 + X2 Copy.');
+      s.emit('You have already taken that pair. Choose another.');
       this._change();
       return;
     }
 
-    this._drawPair(0, pair);
+    this._drawPair(0, pair, s.balancedMode);
     // AI already drew when semester break started; just advance
     s.phase = PHASES.END_OF_SEMESTER;
     this._change();
@@ -1714,9 +1768,9 @@ class Game {
   _calcScores() {
     const s = this.state;
     return [0,1,2,3].map(i => {
-      const pilePoints = s.partyPiles[i].reduce((sum, c) => {
-        return sum + (c.isCopy ? 0 : c.value);
-      }, 0);
+      const pilePoints = s.balancedMode
+        ? scoreBalancedPartyPile(s.partyPiles[i])
+        : s.partyPiles[i].reduce((sum, c) => sum + (c.isCopy ? 0 : c.value), 0);
       const ecPoints = s.extraCredits[i].length * EXTRA_CREDIT_POINTS;
       const noFails = s.fails[i] === 0;
       const responsibleBonus = s.extraCredits[i].some(ec => ec.type === 'responsible') && noFails ? 3 : 0;

@@ -23,6 +23,26 @@
 </div>
 
 <!-- ══════════════════════════════════════════════════════════
+     MODE SELECTION SCREEN
+═══════════════════════════════════════════════════════════ -->
+<div id="screen-mode" class="screen">
+  <h1>Choose Mode</h1>
+
+  <div class="mode-cards">
+    <div class="mode-card" id="mode-card-regular" onclick="UI.selectMode('regular')">
+      <div class="mode-card-title">Regular</div>
+      <div class="mode-card-desc">Classic Slackademics. Hand of 1–8 &amp; two X2s. Effort targets from exam cards. All skills available.</div>
+    </div>
+    <div class="mode-card" id="mode-card-balanced" onclick="UI.selectMode('balanced')">
+      <div class="mode-card-title">Balanced Snitching</div>
+      <div class="mode-card-desc">Fixed hand of 1,2,3,4,4,5,6,7,X2,X2 every semester. Cards played to effort &amp; party pile must sum to 8. X2 in party pile doubles the next card. Effort targets 11–18.</div>
+    </div>
+  </div>
+
+  <button class="btn btn-muted" style="margin-top:16px" onclick="UI.backToTitle()">Back</button>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
      OPTIONS SCREEN
 ═══════════════════════════════════════════════════════════ -->
 <div id="screen-options" class="screen">
@@ -65,7 +85,7 @@
   </div>
 
   <button class="btn btn-primary" onclick="UI.startGame()">Start Game</button>
-  <button class="btn btn-muted"   style="margin-top:8px" onclick="UI.backToTitle()">Back</button>
+  <button class="btn btn-muted"   style="margin-top:8px" onclick="UI.backToMode()">Back</button>
 </div>
 
 <!-- ══════════════════════════════════════════════════════════
@@ -583,11 +603,23 @@ const UI = (() => {
   // ── Options / Start / Restart ─────────────────────────────
   // Per-player AI modes: index 0 = Alex (player 1), 1 = Billie, 2 = Casey
   let _aiModes = ['balanced', 'balanced', 'balanced'];
+  let _gameMode = 'regular'; // 'regular' | 'balanced'
 
   function openOptions() {
-    _aiModes = ['balanced', 'balanced', 'balanced'];
-    _applyAllSelections();
-    showScreen('screen-options');
+    showScreen('screen-mode');
+    document.getElementById('mode-card-regular').classList.toggle('selected', _gameMode === 'regular');
+    document.getElementById('mode-card-balanced').classList.toggle('selected', _gameMode === 'balanced');
+  }
+
+  function selectMode(mode) {
+    _gameMode = mode;
+    document.getElementById('mode-card-regular').classList.toggle('selected', mode === 'regular');
+    document.getElementById('mode-card-balanced').classList.toggle('selected', mode === 'balanced');
+    setTimeout(() => {
+      _aiModes = ['balanced', 'balanced', 'balanced'];
+      _applyAllSelections();
+      showScreen('screen-options');
+    }, 220);
   }
 
   function selectAI(playerNum, mode) {
@@ -610,13 +642,17 @@ const UI = (() => {
     showScreen('screen-title');
   }
 
+  function backToMode() {
+    showScreen('screen-mode');
+  }
+
   function startGame() {
     _logCount = 0;
     _logOpen  = false;
     _blameSpinShown = false;
     showScreen('screen-game');
     switchTab('project');
-    game = new Game(renderState, [..._aiModes]);
+    game = new Game(renderState, [..._aiModes], _gameMode === 'balanced');
     window.onLogMessage = appendLog;
     game.start();
   }
@@ -845,9 +881,13 @@ const UI = (() => {
     if (selecting) {
       const hint = document.createElement('div');
       hint.style.cssText = 'font-size:0.75rem;color:var(--muted);margin-top:6px;width:100%';
-      hint.textContent = _effortSel
-        ? `Effort: ${_effortSel.isCopy ? 'X2 Copy' : _effortSel.value} selected. Now tap a Party Pile card.`
-        : 'Tap a card to play toward the project (Effort), then tap another for your Party Pile.';
+      if (game.state.balancedMode) {
+        hint.textContent = 'Tap a card — the paired card (summing to 8) is played automatically.';
+      } else {
+        hint.textContent = _effortSel
+          ? `Effort: ${_effortSel.isCopy ? 'X2 Copy' : _effortSel.value} selected. Now tap a Party Pile card.`
+          : 'Tap a card to play toward the project (Effort), then tap another for your Party Pile.';
+      }
       handEl.appendChild(hint);
     }
 
@@ -855,6 +895,19 @@ const UI = (() => {
   }
 
   function handleCardClick(card, state) {
+    // Balanced mode: one tap = auto-pair submitted immediately
+    if (game.state.balancedMode) {
+      const partner = getBalancedPartner(card, state.hands[0]);
+      if (!partner) {
+        // No valid partner — shouldn't happen with a correct balanced hand
+        return;
+      }
+      _effortSel = null;
+      _step = 'effort';
+      game.humanPlayCards(card, partner);
+      return;
+    }
+
     if (_step === 'effort') {
       _effortSel = card;
       _step = 'party';
@@ -1460,8 +1513,10 @@ const UI = (() => {
     const pairsEl    = document.getElementById('modal-break-pairs');
     const freePickEl = document.getElementById('modal-free-pick');
 
-    if (state.semester === 6) {
-      // ── Free pick: any two cards ──────────────────────────
+    const isBalanced = game.state.balancedMode;
+
+    if (!isBalanced && state.semester === 6) {
+      // ── Regular mode semester 6: free pick any two cards ─
       document.getElementById('modal-break-desc').textContent =
         'Final break — pick any two cards for your Year 4 projects!';
       pairsEl.style.display = 'none';
@@ -1487,14 +1542,16 @@ const UI = (() => {
       });
 
     } else {
-      // ── Standard pair pick ────────────────────────────────
-      document.getElementById('modal-break-desc').textContent =
-        'Draw a pair summing to 8. You cannot take the same pair twice (except 4 + X2 Copy).';
+      // ── Standard pair pick (always in balanced mode) ──────
+      const pairs = isBalanced ? BALANCED_BREAK_PAIRS : BREAK_PAIRS;
+      document.getElementById('modal-break-desc').textContent = isBalanced
+        ? 'Pick a pair summing to 8 — both cards go directly to your party pile.'
+        : 'Draw a pair summing to 8. You cannot take the same pair twice (except 4 + X2 Copy).';
       pairsEl.style.display = '';
       freePickEl.style.display = 'none';
       pairsEl.innerHTML = '';
       const taken = state.takenBreakPairs[0];
-      BREAK_PAIRS.forEach(pair => {
+      pairs.forEach(pair => {
         const already = !pair.canRepeat && taken.includes(pair.id);
         const div = document.createElement('div');
         div.className = 'vote-option' + (already ? ' disabled' : '');
@@ -1706,7 +1763,7 @@ const UI = (() => {
   function passSnitch() { if (game) { game.humanPassSnitch(); hideOverlay('modal-snitch'); } }
 
   return { startGame, restartGame, switchTab, passSnitch, toggleLog, confirmFreePick,
-           openOptions, selectAI, backToTitle };
+           openOptions, selectAI, backToTitle, selectMode, backToMode };
 })();
 </script>
 </body>

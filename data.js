@@ -368,9 +368,46 @@ const AI_NAMES = ['Alex', 'Billie', 'Casey'];
 // ============================================================
 // EXPORTS
 // ============================================================
+// BALANCED SNITCHING MODE — Fixed hand, no conditions, effort 11–18
+// ============================================================
+
+// Fixed hand every semester: 1,2,3,4,4,5,6,7,X2,X2
+function makeBalancedHand(playerId, suffix = '') {
+  const hand = [];
+  [1, 2, 3, 4, 4, 5, 6, 7].forEach((v, i) => {
+    hand.push({ typeId: 'e' + v, value: v, isCopy: false, uid: `${playerId}_b${v}_${i}${suffix}` });
+  });
+  hand.push({ typeId: 'copy', value: null, isCopy: true, uid: `${playerId}_bcopy_0${suffix}` });
+  hand.push({ typeId: 'copy', value: null, isCopy: true, uid: `${playerId}_bcopy_1${suffix}` });
+  return hand;
+}
+
+// Balanced break pairs — each pair sums to 8, go directly to party pile
+const BALANCED_BREAK_PAIRS = [
+  { id: 'bp_1_7',  cards: [1, 7],          label: '1 + 7',   canRepeat: false },
+  { id: 'bp_2_6',  cards: [2, 6],          label: '2 + 6',   canRepeat: false },
+  { id: 'bp_3_5',  cards: [3, 5],          label: '3 + 5',   canRepeat: false },
+  { id: 'bp_4_4',  cards: [4, 4],          label: '4 + 4',   canRepeat: false },
+  { id: 'bp_cc',   cards: ['copy','copy'],  label: 'X2 + X2', canRepeat: false },
+];
+
+// Balanced exam cards — effort values 11–18, no conditions
+const BALANCED_PROJECTS = [
+  { id: 'bp1', code: 'YEAR 1', title: 'Barely Surviving',   effort: 11, condition: null, img: IMG.exam(1) },
+  { id: 'bp2', code: 'YEAR 1', title: 'Finding Your Feet',  effort: 12, condition: null, img: IMG.exam(2) },
+  { id: 'bp3', code: 'YEAR 2', title: 'Group Dysfunction',  effort: 13, condition: null, img: IMG.exam(3) },
+  { id: 'bp4', code: 'YEAR 2', title: 'Picking Up Speed',   effort: 14, condition: null, img: IMG.exam(4) },
+  { id: 'bp5', code: 'YEAR 3', title: 'Mid-Game Grind',     effort: 15, condition: null, img: IMG.exam(5) },
+  { id: 'bp6', code: 'YEAR 3', title: 'Under Pressure',     effort: 16, condition: null, img: IMG.exam(6) },
+  { id: 'bp7', code: 'YEAR 4', title: 'Final Stretch',      effort: 17, condition: null, img: IMG.exam(7) },
+  { id: 'bp8', code: 'YEAR 4', title: 'Graduation Sprint',  effort: 18, condition: null, img: IMG.exam(8) },
+];
+
+// ============================================================
 if (typeof module !== 'undefined') {
   module.exports = {
-    EFFORT_CARD_TYPES, makeStartingHand, BREAK_PAIRS,
+    EFFORT_CARD_TYPES, makeStartingHand, makeBalancedHand,
+    BREAK_PAIRS, BALANCED_BREAK_PAIRS, BALANCED_PROJECTS,
     CONDITIONS, PROJECTS, PROJECT_PAIRS,
     LEADERSHIP_SKILLS, OTHER_IMGS, AI_NAMES,
   };
