@@ -861,9 +861,16 @@ const UI = (() => {
 
     if (state.expelled[0]) {
       handEl.innerHTML = '<span style="color:var(--red);font-size:0.85rem">EXPELLED</span>';
-    } else if (!selecting && state.cardsPlayedThisSemester[0] !== null &&
-               state.phase === PHASES.CARD_SELECTION) {
-      handEl.innerHTML = '<span style="color:var(--green-light);font-size:0.82rem">Cards chosen — waiting...</span>';
+    } else if (state.cardsPlayedThisSemester[0] !== null &&
+               [PHASES.CARD_SELECTION, PHASES.REVEAL, PHASES.DAY_OF_DEADLINE,
+                PHASES.FINAL_REVEALED, PHASES.OUTCOME_PASS, PHASES.OUTCOME_FAIL,
+                PHASES.NOMINATE, PHASES.BLAME_SPINNING, PHASES.BLAME_VOTE,
+                PHASES.VOTE_RESULT, PHASES.SNITCH, PHASES.SNITCH_REVEAL].includes(state.phase)) {
+      const effort = state.cardsPlayedThisSemester[0];
+      const party  = state.partyCardsPlayedThisSemester[0];
+      const effortLabel = effort ? (effort.isCopy ? 'X2 Copy' : effort.value) : '?';
+      const partyLabel  = party  ? (party.isCopy  ? 'X2 Copy' : party.value)  : '?';
+      handEl.innerHTML = `<span style="color:var(--green-light);font-size:0.82rem">Played: Effort <strong>${effortLabel}</strong> / Party <strong>${partyLabel}</strong></span>`;
     } else {
       state.hands[0].forEach(card => {
         const el = makeCardEl(card, 'card');
@@ -954,6 +961,10 @@ const UI = (() => {
       const ecCount    = (state.extraCredits[i] || []).filter(e => e.type === 'extra_credit').length;
 
       const isThinking = state.phase === PHASES.CARD_SELECTION && state.cardsPlayedThisSemester[i] === null && !state.expelled[i];
+      const aiPlayed   = state.cardsPlayedThisSemester[i] !== null;
+      const aiEffortLbl = aiPlayed ? (state.cardsPlayedThisSemester[i].isCopy ? 'X2' : state.cardsPlayedThisSemester[i].value) : null;
+      const aiPartyLbl  = aiPlayed && state.partyCardsPlayedThisSemester[i]
+        ? (state.partyCardsPlayedThisSemester[i].isCopy ? 'X2' : state.partyCardsPlayedThisSemester[i].value) : null;
       div.innerHTML = `
         <div class="ai-info">
           <div class="player-header">
@@ -961,7 +972,7 @@ const UI = (() => {
             ${state.projectLeaderIndex === i ? '<span class="pl-badge">PL</span>' : ''}
             ${isThinking ? '<span class="ai-thinking">...</span>' : ''}
           </div>
-          <div class="ai-card-count">Hand: ${handCount} &bull; Party: ${partyCount}</div>
+          <div class="ai-card-count">${aiPlayed && aiEffortLbl !== null ? `Played: Effort <strong>${aiEffortLbl}</strong> / Party <strong>${aiPartyLbl ?? '?'}</strong>` : `Hand: ${handCount} &bull; Party: ${partyCount}`}</div>
           <div class="token-row" id="tokens-${i}"></div>
         </div>`;
 
