@@ -629,15 +629,6 @@ class Game {
     s.votes = [-1, -1, -1, -1];
     s.outcomeFlash = null;
 
-    // Balanced mode: reset every player's hand to the fixed balanced hand each semester
-    if (s.balancedMode) {
-      for (let i = 0; i < NUM_PLAYERS; i++) {
-        if (!s.expelled[i]) {
-          s.hands[i] = makeBalancedHand(i, `_s${s.semester}`);
-        }
-      }
-    }
-
     s.phase = PHASES.SEMESTER_START;
     s.emit(`Semester ${s.semester}: ${s.currentProject.code} — ${s.currentProject.title}. Effort required: ${s.effortRequired}.`);
     if (s.currentProject.condition) {
@@ -1581,13 +1572,13 @@ class Game {
     if (eligible.length === 0) {
       // All pairs taken — pick a random one to repeat
       const pick = pairs[Math.floor(Math.random() * pairs.length)];
-      this._drawPair(playerIndex, pick, s.balancedMode);
+      this._drawPair(playerIndex, pick, false); // always to hand
       return;
     }
 
     // Prefer mid-range pairs for AI
     const pick = eligible[Math.floor(Math.random() * eligible.length)];
-    this._drawPair(playerIndex, pick, s.balancedMode);
+    this._drawPair(playerIndex, pick, false); // always to hand
   }
 
   _drawPair(playerIndex, pair, toPartyPile = false) {
@@ -1604,8 +1595,7 @@ class Game {
       }
     });
 
-    const dest_label = toPartyPile ? 'party pile' : 'hand';
-    s.emit(`${s.playerNames[playerIndex]} draws ${pair.label} to their ${dest_label}.`);
+    s.emit(`${s.playerNames[playerIndex]} draws ${pair.label} to their hand.`);
   }
 
   humanDrawBreakPair(pairId) {
@@ -1623,7 +1613,7 @@ class Game {
       return;
     }
 
-    this._drawPair(0, pair, s.balancedMode);
+    this._drawPair(0, pair, false); // always to hand
     // AI already drew when semester break started; just advance
     s.phase = PHASES.END_OF_SEMESTER;
     this._change();

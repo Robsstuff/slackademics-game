@@ -1556,7 +1556,7 @@ const UI = (() => {
       // ── Standard pair pick (always in balanced mode) ──────
       const pairs = isBalanced ? BALANCED_BREAK_PAIRS : BREAK_PAIRS;
       document.getElementById('modal-break-desc').textContent = isBalanced
-        ? 'Pick a pair summing to 8 — both cards go directly to your party pile.'
+        ? 'Pick a pair summing to 8 — both cards are added to your hand.'
         : 'Draw a pair summing to 8. You cannot take the same pair twice (except 4 + X2 Copy).';
       pairsEl.style.display = '';
       freePickEl.style.display = 'none';
