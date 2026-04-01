@@ -97,6 +97,9 @@ html, body {
 .ai-badge {
   font-size: 1.1rem;
 }
+.ai-badge-gto { color: var(--sky); }
+.gto-only { display: none; }
+#screen-options.balanced-mode .gto-only { display: inline-flex; }
 
 /* Per-player table */
 .ai-player-table {
@@ -373,6 +376,7 @@ html, body {
 }
 .ai-player-row.is-pl  { border-color: var(--gold-light); }
 .ai-player-row.expelled { opacity: 0.4; }
+.ai-player-row.expelled .ai-player-label { text-decoration: line-through; color: var(--red-light); }
 
 .ai-info { flex: 1; min-width: 0; }
 .player-name  { font-weight: 700; font-size: clamp(0.82rem, 3vw, 0.95rem); }
@@ -873,6 +877,8 @@ html, body {
 .score-rank.silver { color: #bdc3c7; }
 .score-rank.bronze { color: #cd7f32; }
 .score-name  { flex: 1; font-size: clamp(0.88rem, 3vw, 0.95rem); }
+.score-name.expelled { text-decoration: line-through; color: var(--red-light); }
+#human-name.expelled { text-decoration: line-through; color: var(--red-light); }
 .score-total { font-size: 1.05rem; font-weight: 800; color: var(--green-light); }
 .score-break { font-size: 0.7rem; color: var(--muted); }
 

@@ -306,6 +306,17 @@ function aiChooseEffortCard(state, playerIndex, mode) {
     return hand[Math.floor(Math.random() * hand.length)];
   }
 
+  // ── GTO (Balanced Snitching mode only) ───────────────────────
+  // Contribute fair-share effort; hold X2 pairs for party pile scoring.
+  if (mode === 'gto') {
+    const fairShare = Math.ceil(state.effortRequired / activePlayers);
+    if (nonCopies.length > 0) {
+      return nonCopies.reduce((b, c) =>
+        Math.abs(c.value - fairShare) < Math.abs(b.value - fairShare) ? c : b);
+    }
+    return copies[0];
+  }
+
   // ── Balanced (default) ───────────────────────────────────────
   // Four equal 25% buckets: conditional-greedy / average / random / copy
   const roll = Math.random();
@@ -443,7 +454,30 @@ function aiBlamevote(state, voterIndex) {
   return 0; // 35 % blind vote for accused
 }
 
-function aiShouldSnitch(state, playerIndex) {
+function aiShouldSnitch(state, playerIndex, mode) {
+  // ── GTO ─────────────────────────────────────────────────────
+  // Deduce all party values from the effort pile (effort + party = 8; X2 effort → party snitch value = 9).
+  // Rank all players by deduced party value; snitch probability scales with how virtuous (low party) I am.
+  // Never snitch if I hold the highest deduced party value — I am the likely target.
+  if (mode === 'gto') {
+    const playerPartyVals = {};
+    state.effortPile.forEach(entry => {
+      playerPartyVals[entry.playedBy] = entry.card.isCopy ? 9 : 8 - entry.card.value;
+    });
+    const active = [0,1,2,3].filter(i => !state.expelled[i] && playerPartyVals[i] !== undefined);
+    if (active.length < 2) return false;
+    const sorted = [...active].sort((a, b) => playerPartyVals[a] - playerPartyVals[b]);
+    const myRank = sorted.indexOf(playerIndex); // 0 = lowest party val (safest)
+    if (myRank === sorted.length - 1) return false; // I have highest — never snitch
+    const chances = [0.85, 0.55, 0.25];
+    const chance = chances[myRank] !== undefined ? chances[myRank] : 0.10;
+    if (Math.random() >= chance) return false;
+    // Only proceed if there is a single unique highest-party-value target
+    const maxPartyVal = playerPartyVals[sorted[sorted.length - 1]];
+    const topPlayers = active.filter(i => i !== playerIndex && playerPartyVals[i] === maxPartyVal);
+    return topPlayers.length === 1;
+  }
+
   const pile = state.partyPiles[playerIndex];
   if (pile.length === 0) return false;
   const myTop = pile[pile.length - 1];
@@ -466,15 +500,32 @@ function aiShouldSnitch(state, playerIndex) {
   return Math.random() < 0.30;                                // unfavoured bluff → 30 %
 }
 
-function aiChooseSnitchTarget(state, snitcherIndex) {
-  // Target the player with the highest estimated top party card
+function aiChooseSnitchTarget(state, snitcherIndex, mode) {
   const others = [0, 1, 2, 3].filter(
-    i => i !== snitcherIndex && !state.expelled[i] && state.partyPiles[i].length > 0
+    i => i !== snitcherIndex && !state.expelled[i]
   );
   if (others.length === 0) return -1;
-  let best = others[0];
+
+  // GTO: use deduced party values from the effort pile (X2 = 9, else 8 − effortValue)
+  if (mode === 'gto') {
+    const playerPartyVals = {};
+    state.effortPile.forEach(entry => {
+      playerPartyVals[entry.playedBy] = entry.card.isCopy ? 9 : 8 - entry.card.value;
+    });
+    let best = -1, bestVal = -1;
+    others.forEach(i => {
+      const v = playerPartyVals[i] !== undefined ? playerPartyVals[i] : -1;
+      if (v > bestVal) { bestVal = v; best = i; }
+    });
+    return best;
+  }
+
+  // Default: target the player with the highest visible top party card
+  const validOthers = others.filter(i => state.partyPiles[i].length > 0);
+  if (validOthers.length === 0) return -1;
+  let best = validOthers[0];
   let bestVal = -1;
-  others.forEach(i => {
+  validOthers.forEach(i => {
     const top = state.partyPiles[i][state.partyPiles[i].length - 1];
     const v = top.isCopy ? 0 : top.value;
     if (v > bestVal) { bestVal = v; best = i; }
@@ -1401,8 +1452,9 @@ class Game {
   _aiSnitch() {
     const s = this.state;
     const i = s.currentSnitchPlayer;
-    if (aiShouldSnitch(s, i)) {
-      const target = aiChooseSnitchTarget(s, i);
+    const aiMode = i > 0 ? this.aiModes[i - 1] : 'balanced';
+    if (aiShouldSnitch(s, i, aiMode)) {
+      const target = aiChooseSnitchTarget(s, i, aiMode);
       if (target !== -1) {
         this._processSnitchAttempt(i, target);
         return;
@@ -1758,6 +1810,13 @@ class Game {
   _calcScores() {
     const s = this.state;
     return [0,1,2,3].map(i => {
+      if (s.expelled[i]) {
+        return {
+          playerIndex: i, name: s.playerNames[i],
+          score: 0, pilePoints: 0, ecPoints: 0, responsibleBonus: 0,
+          expelled: true, details: 'expelled',
+        };
+      }
       const pilePoints = s.balancedMode
         ? scoreBalancedPartyPile(s.partyPiles[i])
         : s.partyPiles[i].reduce((sum, c) => sum + (c.isCopy ? 0 : c.value), 0);
@@ -1766,13 +1825,14 @@ class Game {
       const responsibleBonus = s.extraCredits[i].some(ec => ec.type === 'responsible') && noFails ? 3 : 0;
       const total = pilePoints + ecPoints + responsibleBonus;
       return {
-        playerIndex: i,
-        name: s.playerNames[i],
-        score: total,
-        pilePoints, ecPoints, responsibleBonus,
-        details: `pile:${pilePoints} ec:${ecPoints} bonus:${responsibleBonus}`,
+        playerIndex: i, name: s.playerNames[i],
+        score: total, pilePoints, ecPoints, responsibleBonus,
+        expelled: false, details: `pile:${pilePoints} ec:${ecPoints} bonus:${responsibleBonus}`,
       };
-    }).sort((a, b) => b.score - a.score);
+    }).sort((a, b) => {
+      if (a.expelled !== b.expelled) return a.expelled ? 1 : -1;
+      return b.score - a.score;
+    });
   }
 }
 

@@ -54,6 +54,7 @@
     <div class="ai-legend-item"><span class="ai-badge ai-badge-balanced">&#9878;</span><span><strong>Balanced</strong> &mdash; mixes strategies; occasionally surprises you</span></div>
     <div class="ai-legend-item"><span class="ai-badge ai-badge-random">&#127922;</span><span><strong>Random</strong> &mdash; picks every card at random; pure chaos</span></div>
     <div class="ai-legend-item"><span class="ai-badge ai-badge-greedy">&#128176;</span><span><strong>Greedy</strong> &mdash; plays low to effort, hoards high cards for partying</span></div>
+    <div class="ai-legend-item gto-only"><span class="ai-badge ai-badge-gto">&#9651;</span><span><strong>GTO</strong> &mdash; game-theory optimal; fair effort, precision snitching</span></div>
   </div>
 
   <!-- Per-player rows -->
@@ -64,6 +65,7 @@
         <button class="btn btn-ai selected" data-player="1" data-mode="balanced" onclick="UI.selectAI(1,'balanced')">&#9878; Balanced</button>
         <button class="btn btn-ai"          data-player="1" data-mode="random"   onclick="UI.selectAI(1,'random')">&#127922; Random</button>
         <button class="btn btn-ai"          data-player="1" data-mode="greedy"   onclick="UI.selectAI(1,'greedy')">&#128176; Greedy</button>
+        <button class="btn btn-ai gto-only" data-player="1" data-mode="gto"      onclick="UI.selectAI(1,'gto')">&#9651; GTO</button>
       </div>
     </div>
     <div class="ai-player-row" id="ai-row-2">
@@ -72,6 +74,7 @@
         <button class="btn btn-ai selected" data-player="2" data-mode="balanced" onclick="UI.selectAI(2,'balanced')">&#9878; Balanced</button>
         <button class="btn btn-ai"          data-player="2" data-mode="random"   onclick="UI.selectAI(2,'random')">&#127922; Random</button>
         <button class="btn btn-ai"          data-player="2" data-mode="greedy"   onclick="UI.selectAI(2,'greedy')">&#128176; Greedy</button>
+        <button class="btn btn-ai gto-only" data-player="2" data-mode="gto"      onclick="UI.selectAI(2,'gto')">&#9651; GTO</button>
       </div>
     </div>
     <div class="ai-player-row" id="ai-row-3">
@@ -80,6 +83,7 @@
         <button class="btn btn-ai selected" data-player="3" data-mode="balanced" onclick="UI.selectAI(3,'balanced')">&#9878; Balanced</button>
         <button class="btn btn-ai"          data-player="3" data-mode="random"   onclick="UI.selectAI(3,'random')">&#127922; Random</button>
         <button class="btn btn-ai"          data-player="3" data-mode="greedy"   onclick="UI.selectAI(3,'greedy')">&#128176; Greedy</button>
+        <button class="btn btn-ai gto-only" data-player="3" data-mode="gto"      onclick="UI.selectAI(3,'gto')">&#9651; GTO</button>
       </div>
     </div>
   </div>
@@ -618,6 +622,7 @@ const UI = (() => {
     setTimeout(() => {
       _aiModes = ['balanced', 'balanced', 'balanced'];
       _applyAllSelections();
+      document.getElementById('screen-options').classList.toggle('balanced-mode', mode === 'balanced');
       showScreen('screen-options');
     }, 220);
   }
@@ -813,6 +818,7 @@ const UI = (() => {
     const sec  = document.getElementById('human-section');
     ispl ? sec.classList.add('is-pl') : sec.classList.remove('is-pl');
     document.getElementById('human-pl-badge').style.display = ispl ? 'inline-block' : 'none';
+    document.getElementById('human-name').classList.toggle('expelled', !!state.expelled[0]);
     const humanFailEl = document.getElementById('human-fail-dots');
     if (humanFailEl) {
       humanFailEl.innerHTML = '';
@@ -1714,7 +1720,7 @@ const UI = (() => {
       div.className = 'score-row';
       div.innerHTML = `
         <span class="score-rank ${ranks[idx]||''}">${idx+1}.</span>
-        <span class="score-name">${s.name}</span>
+        <span class="score-name${s.expelled ? ' expelled' : ''}">${s.name}</span>
         <div>
           <div class="score-total">${s.score} pts</div>
           <div class="score-break">Pile: ${s.pilePoints} + EC: ${s.ecPoints}${s.responsibleBonus?' +Bonus:'+s.responsibleBonus:''}</div>
