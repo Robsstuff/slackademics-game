@@ -172,8 +172,13 @@ function calculateEffortTotal(pile, condition, skill = null) {
       if (card._doubleMultiplier) copyMult *= card._doubleMultiplier;
 
       if (isLast) {
-        // Last card is a copy → contributes flat 7
-        total += 7 * multiplier;
+        // Last card is a copy → wraps around and doubles the first non-copy card.
+        // If every card in the pile is a copy, nothing is doubled and the value is 0.
+        const totalTrailing = multiplier * copyMult;
+        const firstNonCopy = processed.find(c => !c.isCopy);
+        if (firstNonCopy) {
+          total += firstNonCopy.value * (totalTrailing - 1);
+        }
       } else {
         multiplier *= copyMult;
       }
@@ -558,7 +563,15 @@ function scoreBalancedPartyPile(pile) {
       multiplier = 1;
     }
   }
-  return total; // any trailing X2s contribute 0 (multiplier not applied)
+  // Trailing X2(s): wrap around and apply to the first non-copy card.
+  // If every card is a copy, nothing is doubled and the value is 0.
+  if (multiplier > 1) {
+    const firstNonCopy = pile.find(c => !c.isCopy);
+    if (firstNonCopy) {
+      total += firstNonCopy.value * (multiplier - 1);
+    }
+  }
+  return total;
 }
 
 // ── Game Controller ─────────────────────────────────────────
